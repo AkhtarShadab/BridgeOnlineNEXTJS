@@ -36,10 +36,11 @@ BridgeOnline is a web-based, real-time multiplayer Bridge card game built on **N
 - **File Storage**: Vercel Blob or AWS S3 (for avatars)
 
 #### Infrastructure
-- **Hosting**: Vercel (Frontend + Serverless Functions)
+- **Hosting**: Hostinger (Frontend with custom domain) or Vercel
+- **Backend/API**: Vercel Serverless Functions or Node.js server on Hostinger VPS
 - **Database Hosting**: Supabase, Railway, or Neon
 - **Redis Hosting**: Upstash Redis
-- **CDN**: Vercel Edge Network
+- **CDN**: Hostinger CDN or Cloudflare
 
 ---
 
@@ -1127,21 +1128,158 @@ Pass
 
 ## 10. Deployment Architecture
 
+### 10.1 Hostinger Domain Hosting Setup
+
+The frontend will be hosted on a **Hostinger custom domain** with the following configuration:
+
+#### Domain Configuration
+- **Primary Domain**: Your custom Hostinger domain (e.g., `bridgeonline.yourdomain.com`)
+- **SSL Certificate**: Free SSL from Hostinger or Let's Encrypt
+- **DNS Management**: Hostinger DNS or Cloudflare
+
+#### Hosting Options
+
+**Option A: Hostinger Shared/Premium Hosting + External Backend**
 ```mermaid
 graph TB
-    Users[Users] --> CDN[Vercel Edge CDN]
-    CDN --> NextJS[Next.js App - Vercel]
-    NextJS --> API[API Routes]
-    NextJS --> Socket[Socket.io Server]
+    Users[Users] --> Domain[Hostinger Domain + SSL]
+    Domain --> CDN[Cloudflare CDN]
+    CDN --> Static[Next.js Static Export - Hostinger]
+    Static --> API[API - Vercel Serverless]
+    API --> Socket[Socket.io - Separate Server]
     API --> DB[(PostgreSQL - Supabase)]
     API --> Redis[(Redis - Upstash)]
     Socket --> Redis
-    NextJS --> Auth[NextAuth.js]
-    Auth --> DB
 ```
 
-### 10.1 Environment Variables
+**Option B: Hostinger VPS (Recommended for Full Control)**
+```mermaid
+graph TB
+    Users[Users] --> Domain[Hostinger Domain + SSL]
+    Domain --> CDN[Cloudflare CDN]
+    CDN --> VPS[Hostinger VPS]
+    VPS --> NextJS[Next.js App - Node.js]
+    VPS --> Socket[Socket.io Server]
+    NextJS --> API[API Routes]
+    API --> DB[(PostgreSQL - Supabase/Self-hosted)]
+    API --> Redis[(Redis - Upstash/Self-hosted)]
+    Socket --> Redis
+```
+
+#### Hostinger Deployment Steps
+
+**For Static Export (Option A)**:
+```bash
+# 1. Configure Next.js for static export
+# Add to next.config.js:
+module.exports = {
+  output: 'export',
+  images: {
+    unoptimized: true // Required for static export
+  }
+}
+
+# 2. Build the static site
+npm run build
+
+# 3. Upload 'out' folder to Hostinger via FTP/SFTP or File Manager
+# Upload to: public_html/ (or your domain's root directory)
+
+# 4. Configure API endpoints to point to external backend
+NEXT_PUBLIC_API_URL=https://your-api.vercel.app
+NEXT_PUBLIC_SOCKET_URL=wss://your-socket-server.com
+```
+
+**For VPS Deployment (Option B)**:
+```bash
+# 1. SSH into Hostinger VPS
+ssh root@your-vps-ip
+
+# 2. Install Node.js and PM2
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt-get install -y nodejs
+npm install -g pm2
+
+# 3. Clone repository and install dependencies
+git clone https://github.com/yourusername/BridgeOnline.git
+cd BridgeOnline
+npm install
+
+# 4. Build the Next.js app
+npm run build
+
+# 5. Start with PM2
+pm2 start npm --name "bridge-app" -- start
+pm2 save
+pm2 startup
+
+# 6. Configure Nginx reverse proxy
+# See Nginx configuration below
+```
+
+#### Nginx Configuration (for VPS)
+```nginx
+server {
+    listen 80;
+    server_name bridgeonline.yourdomain.com;
+    
+    # Redirect HTTP to HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name bridgeonline.yourdomain.com;
+    
+    # SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    
+    # Next.js app
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    # Socket.io WebSocket
+    location /socket.io/ {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+#### DNS Configuration
+
+Point your Hostinger domain to your hosting:
+
+**For Shared Hosting**:
+- **A Record**: Points to Hostinger server IP (provided by Hostinger)
+- **CNAME**: `www` points to your main domain
+
+**For VPS**:
+- **A Record**: `@` → Your VPS IP address
+- **A Record**: `www` → Your VPS IP address
+- **AAAA Record** (optional): IPv6 address
+
+**Cloudflare Integration** (Recommended):
+1. Add domain to Cloudflare
+2. Update nameservers at Hostinger to Cloudflare's
+3. Enable Cloudflare CDN (orange cloud)
+4. Configure SSL/TLS to "Full" or "Full (strict)"
+
+### 10.2 Environment Variables
 ```env
+# Domain
+NEXT_PUBLIC_DOMAIN=https://bridgeonline.yourdomain.com
+
 # Database
 DATABASE_URL=postgresql://...
 DIRECT_URL=postgresql://...
@@ -1150,15 +1288,58 @@ DIRECT_URL=postgresql://...
 REDIS_URL=redis://...
 
 # Authentication
-NEXTAUTH_URL=https://bridgeonline.com
+NEXTAUTH_URL=https://bridgeonline.yourdomain.com
 NEXTAUTH_SECRET=...
 
-# Socket.io
-SOCKET_SERVER_URL=wss://...
+# API & Socket (adjust based on deployment option)
+# Option A (Static Export):
+NEXT_PUBLIC_API_URL=https://api.bridgeonline.com
+NEXT_PUBLIC_SOCKET_URL=wss://socket.bridgeonline.com
+
+# Option B (VPS):
+NEXT_PUBLIC_API_URL=https://bridgeonline.yourdomain.com/api
+NEXT_PUBLIC_SOCKET_URL=wss://bridgeonline.yourdomain.com/socket.io
 
 # File Storage
 BLOB_READ_WRITE_TOKEN=...
 ```
+
+### 10.3 Performance Optimizations for Hostinger
+
+#### Caching Headers
+```javascript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+#### Compression
+```bash
+# Enable Gzip/Brotli in Nginx (VPS)
+gzip on;
+gzip_vary on;
+gzip_comp_level 6;
+gzip_types text/plain text/css text/xml text/javascript 
+           application/json application/javascript application/xml+rss;
+```
+
+#### CDN Integration
+- Use Cloudflare for global CDN and DDoS protection
+- Cache static assets (images, JS, CSS) at edge locations
+- Enable Cloudflare's "Auto Minify" for HTML/CSS/JS
 
 ---
 
