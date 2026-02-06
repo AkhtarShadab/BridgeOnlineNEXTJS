@@ -19,7 +19,7 @@ BridgeOnline is a web-based, real-time multiplayer Bridge card game built on **N
 
 #### Frontend
 - **Framework**: Next.js 14/15 (App Router, Server Components, Server Actions)
-- **Language**: TypeScript
+- **Language**: JavaScript
 - **Styling**: Tailwind CSS with custom design system
 - **State Management**: Zustand or React Context + hooks
 - **Real-time**: Socket.io Client
@@ -432,25 +432,22 @@ stateDiagram-v2
 
 ### 3.3 Scoring Algorithm (ACBL Duplicate Bridge)
 
-```typescript
-interface Contract {
-  level: number; // 1-7
-  suit: 'C' | 'D' | 'H' | 'S' | 'NT';
-  doubled: boolean;
-  redoubled: boolean;
-}
-
-interface Vulnerability {
-  NS: boolean;
-  EW: boolean;
-}
-
-function calculateScore(
-  contract: Contract,
-  tricksWon: number,
-  declarer: 'NS' | 'EW',
-  vulnerability: Vulnerability
-): { scoreNS: number; scoreEW: number } {
+```javascript
+/**
+ * Calculate score for a Bridge contract
+ * @param {Object} contract - The contract details
+ * @param {number} contract.level - Contract level (1-7)
+ * @param {string} contract.suit - Contract suit ('C', 'D', 'H', 'S', or 'NT')
+ * @param {boolean} contract.doubled - Whether contract was doubled
+ * @param {boolean} contract.redoubled - Whether contract was redoubled
+ * @param {number} tricksWon - Number of tricks won by declarer
+ * @param {string} declarer - Declaring team ('NS' or 'EW')
+ * @param {Object} vulnerability - Vulnerability status
+ * @param {boolean} vulnerability.NS - NS vulnerable
+ * @param {boolean} vulnerability.EW - EW vulnerable
+ * @returns {Object} Score for each team { scoreNS, scoreEW }
+ */
+function calculateScore(contract, tricksWon, declarer, vulnerability) {
   const requiredTricks = 6 + contract.level;
   const isVulnerable = vulnerability[declarer];
   const overtricks = tricksWon - requiredTricks;
@@ -504,14 +501,14 @@ function calculateScore(
   } else {
     // Contract failed (undertricks)
     if (contract.doubled) {
-      undertricks.forEach((_, i) => {
+      for (let i = 0; i < Math.abs(undertricks); i++) {
         if (i === 0) score -= isVulnerable ? 200 : 100;
         else if (i <= 2) score -= isVulnerable ? 300 : 200;
         else score -= isVulnerable ? 300 : 300;
-      });
+      }
       if (contract.redoubled) score *= 2;
     } else {
-      score -= undertricks * (isVulnerable ? 100 : 50);
+      score -= Math.abs(undertricks) * (isVulnerable ? 100 : 50);
     }
   }
   
@@ -531,24 +528,24 @@ function calculateScore(
 **Description**: Register a new user
 
 **Request Body**:
-```typescript
+```javascript
 {
-  email: string;
-  username: string;
-  password: string;
+  email: "user@example.com",
+  username: "player1",
+  password: "securepassword"
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  user?: {
-    id: string;
-    email: string;
-    username: string;
-  };
-  error?: string;
+  success: true,
+  user: {
+    id: "uuid-string",
+    email: "user@example.com",
+    username: "player1"
+  },
+  error: null
 }
 ```
 
@@ -556,20 +553,20 @@ function calculateScore(
 **Description**: Authenticate user (if using NextAuth credentials)
 
 **Request Body**:
-```typescript
+```javascript
 {
-  email: string;
-  password: string;
+  email: "user@example.com",
+  password: "securepassword"
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  token?: string;
-  user?: UserProfile;
-  error?: string;
+  success: true,
+  token: "jwt-token-here",
+  user: { /* UserProfile object */ },
+  error: null
 }
 ```
 
@@ -579,13 +576,15 @@ function calculateScore(
 **Description**: Search for users by username
 
 **Response**:
-```typescript
+```javascript
 {
-  users: Array<{
-    id: string;
-    username: string;
-    avatar_url: string;
-  }>;
+  users: [
+    {
+      id: "uuid-1",
+      username: "player1",
+      avatar_url: "https://..."
+    }
+  ]
 }
 ```
 
@@ -593,18 +592,18 @@ function calculateScore(
 **Description**: Send friend request
 
 **Request Body**:
-```typescript
+```javascript
 {
-  addresseeId: string;
+  addresseeId: "uuid-of-friend"
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  friendshipId?: string;
-  error?: string;
+  success: true,
+  friendshipId: "friendship-uuid",
+  error: null
 }
 ```
 
@@ -612,9 +611,9 @@ function calculateScore(
 **Description**: Accept/reject friend request
 
 **Request Body**:
-```typescript
+```javascript
 {
-  action: 'accept' | 'reject';
+  action: "accept" // or "reject"
 }
 ```
 
@@ -622,11 +621,11 @@ function calculateScore(
 **Description**: Get user's friends and pending requests
 
 **Response**:
-```typescript
+```javascript
 {
-  friends: UserProfile[];
-  pendingReceived: FriendRequest[];
-  pendingSent: FriendRequest[];
+  friends: [/* array of UserProfile objects */],
+  pendingReceived: [/* array of FriendRequest objects */],
+  pendingSent: [/* array of FriendRequest objects */]
 }
 ```
 
@@ -636,23 +635,23 @@ function calculateScore(
 **Description**: Create a new game room
 
 **Request Body**:
-```typescript
+```javascript
 {
-  name: string;
+  name: "Friday Night Bridge",
   settings: {
-    biddingSystem: 'SAYC' | 'StandardAmerican';
-    numBoards: number;
-    timerEnabled: boolean;
-    timerDuration: number; // seconds
-  };
+    biddingSystem: "SAYC", // or "StandardAmerican"
+    numBoards: 1,
+    timerEnabled: true,
+    timerDuration: 90 // seconds
+  }
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  roomId: string;
-  inviteCode: string;
+  roomId: "room-uuid",
+  inviteCode: "ABCD1234"
 }
 ```
 
@@ -660,18 +659,18 @@ function calculateScore(
 **Description**: Join a room via invite code
 
 **Request Body**:
-```typescript
+```javascript
 {
-  inviteCode: string;
+  inviteCode: "ABCD1234"
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  room?: GameRoom;
-  error?: string;
+  success: true,
+  room: { /* GameRoom object */ },
+  error: null
 }
 ```
 
@@ -679,19 +678,21 @@ function calculateScore(
 **Description**: Get room details
 
 **Response**:
-```typescript
+```javascript
 {
-  id: string;
-  name: string;
-  inviteCode: string;
-  settings: RoomSettings;
-  players: Array<{
-    userId: string;
-    username: string;
-    seat: 'north' | 'south' | 'east' | 'west';
-    isReady: boolean;
-  }>;
-  status: 'waiting' | 'ready' | 'in_progress' | 'completed';
+  id: "room-uuid",
+  name: "Friday Night Bridge",
+  inviteCode: "ABCD1234",
+  settings: { /* RoomSettings object */ },
+  players: [
+    {
+      userId: "user-uuid",
+      username: "player1",
+      seat: "north", // "north", "south", "east", or "west"
+      isReady: true
+    }
+  ],
+  status: "waiting" // "waiting", "ready", "in_progress", or "completed"
 }
 ```
 
@@ -699,9 +700,9 @@ function calculateScore(
 **Description**: Select or change seat
 
 **Request Body**:
-```typescript
+```javascript
 {
-  seat: 'north' | 'south' | 'east' | 'west';
+  seat: "north" // "north", "south", "east", or "west"
 }
 ```
 
@@ -709,9 +710,9 @@ function calculateScore(
 **Description**: Toggle ready status
 
 **Request Body**:
-```typescript
+```javascript
 {
-  isReady: boolean;
+  isReady: true
 }
 ```
 
@@ -721,22 +722,22 @@ function calculateScore(
 **Description**: Make a bid during auction
 
 **Request Body**:
-```typescript
+```javascript
 {
-  action: 'bid' | 'pass' | 'double' | 'redouble';
-  bid?: {
-    level: 1-7;
-    suit: 'C' | 'D' | 'H' | 'S' | 'NT';
-  };
+  action: "bid", // "bid", "pass", "double", or "redouble"
+  bid: {
+    level: 1, // 1-7
+    suit: "H" // "C", "D", "H", "S", or "NT"
+  }
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  gameState?: GameState;
-  error?: string;
+  success: true,
+  gameState: { /* GameState object */ },
+  error: null
 }
 ```
 
@@ -744,18 +745,18 @@ function calculateScore(
 **Description**: Play a card
 
 **Request Body**:
-```typescript
+```javascript
 {
-  card: string; // e.g., "AS" (Ace of Spades)
+  card: "AS" // e.g., "AS" (Ace of Spades)
 }
 ```
 
 **Response**:
-```typescript
+```javascript
 {
-  success: boolean;
-  gameState?: GameState;
-  error?: string;
+  success: true,
+  gameState: { /* GameState object */ },
+  error: null
 }
 ```
 
@@ -763,17 +764,17 @@ function calculateScore(
 **Description**: Get current game state
 
 **Response**:
-```typescript
+```javascript
 {
-  gameId: string;
-  phase: GamePhase;
-  currentPlayer: string;
-  hand: Card[]; // Only player's own cards
-  bidHistory: Bid[];
-  currentTrick: Card[];
-  tricksWon: { NS: number, EW: number };
-  contract?: Contract;
-  dummyHand?: Card[]; // Only visible after first card played
+  gameId: "game-uuid",
+  phase: "playing", // GamePhase
+  currentPlayer: "user-uuid",
+  hand: ["AS", "KH", "QD"], // Only player's own cards
+  bidHistory: [/* array of Bid objects */],
+  currentTrick: ["7H", "QH"],
+  tricksWon: { NS: 3, EW: 2 },
+  contract: { /* Contract object */ },
+  dummyHand: ["2C", "3C"] // Only visible after first card played
 }
 ```
 
@@ -815,7 +816,7 @@ function calculateScore(
 
 ### 5.2 Socket Connection Flow
 
-```typescript
+```javascript
 // Client-side connection
 import { io } from 'socket.io-client';
 
@@ -1216,21 +1217,22 @@ After registration, users will see an interactive tutorial covering:
 ## Appendix A: Card Representation
 
 ### Internal Format
-```typescript
-type Suit = 'C' | 'D' | 'H' | 'S';
-type Rank = '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'T' | 'J' | 'Q' | 'K' | 'A';
-type Card = `${Rank}${Suit}`; // e.g., "AS" = Ace of Spades
+```javascript
+// Card representation: "RS" where R = Rank, S = Suit
+// Suits: 'C', 'D', 'H', 'S'
+// Ranks: '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'
+// Example: "AS" = Ace of Spades
 
-const deck: Card[] = [
-  '2C', '3C', ..., 'AC',
-  '2D', '3D', ..., 'AD',
-  '2H', '3H', ..., 'AH',
-  '2S', '3S', ..., 'AS'
+const deck = [
+  '2C', '3C', '4C', '5C', '6C', '7C', '8C', '9C', 'TC', 'JC', 'QC', 'KC', 'AC',
+  '2D', '3D', '4D', '5D', '6D', '7D', '8D', '9D', 'TD', 'JD', 'QD', 'KD', 'AD',
+  '2H', '3H', '4H', '5H', '6H', '7H', '8H', '9H', 'TH', 'JH', 'QH', 'KH', 'AH',
+  '2S', '3S', '4S', '5S', '6S', '7S', '8S', '9S', 'TS', 'JS', 'QS', 'KS', 'AS'
 ];
 ```
 
 ### Display Mapping
-```typescript
+```javascript
 const suitSymbols = {
   C: '♣',
   D: '♦',
