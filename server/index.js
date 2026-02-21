@@ -29,6 +29,10 @@ app.prepare().then(() => {
         },
     });
 
+    // Make Socket.IO instance globally accessible to Next.js API routes
+    // This enables API routes (e.g. /api/rooms/[roomId]/start) to emit events
+    global.io = io;
+
     io.on('connection', (socket) => {
         console.log('Socket connected:', socket.id);
 
