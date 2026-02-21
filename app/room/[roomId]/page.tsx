@@ -131,8 +131,8 @@ export default function RoomPage() {
                 if (response.ok) {
                     const data = await response.json();
 
-                    // If room status changed to IN_GAME and we have an active game, redirect
-                    if (data.status === 'IN_GAME' && data.activeGameId) {
+                    // If room status changed to IN_PROGRESS and we have an active game, redirect
+                    if (data.status === 'IN_PROGRESS' && data.activeGameId) {
                         console.log('📢 Polling detected game started! Redirecting to:', data.activeGameId);
                         router.push(`/game/${data.activeGameId}`);
                         return;

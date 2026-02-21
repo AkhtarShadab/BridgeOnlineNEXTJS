@@ -42,6 +42,12 @@ export async function GET(
                         username: true,
                     },
                 },
+                // Fetch latest game so non-creator players can be redirected via polling
+                games: {
+                    orderBy: { startedAt: 'desc' },
+                    take: 1,
+                    select: { id: true },
+                },
             },
         });
 
@@ -62,6 +68,8 @@ export async function GET(
             creator: room.creator,
             createdAt: room.createdAt,
             expiresAt: room.expiresAt,
+            // Enables polling fallback redirect for non-creator players
+            activeGameId: room.games[0]?.id ?? null,
             players: room.gamePlayers.map((p) => ({
                 id: p.id,
                 userId: p.user.id,
