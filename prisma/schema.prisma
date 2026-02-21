@@ -1,0 +1,239 @@
+// This file configures the initialization of Sentry on the server.
+// The config you add here will be used whenever the server handles a request.
+// https://docs.sentry.io/platforms/javascript/guides/nextjs/
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String    @map("password_hash")
+  avatarUrl     String?   @map("avatar_url")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastLogin     DateTime? @map("last_login")
+  stats         Json      @default("{\"gamesPlayed\": 0, \"gamesWon\": 0, \"totalScore\": 0}")
+
+  // Relations
+  friendshipsRequested Friendship[] @relation("Requester")
+  friendshipsReceived  Friendship[] @relation("Addressee")
+  gameRooms           GameRoom[]
+  gamePlayers         GamePlayer[]
+  gamesAsDealer       Game[]       @relation("Dealer")
+  gamesAsDeclarer     Game[]       @relation("Declarer")
+  gamesAsCurrentPlayer Game[]      @relation("CurrentPlayer")
+  gameMoves           GameMove[]
+  invitationsSent     RoomInvitation[] @relation("InvitationsSent")
+  invitationsReceived RoomInvitation[] @relation("InvitationsReceived")
+
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+
+  @@map("friendship_status")
+}
+
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String           @map("requester_id")
+  addresseeId String           @map("addressee_id")
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  requester User @relation("Requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("Addressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId])
+  @@index([addresseeId])
+  @@index([status])
+  @@map("friendships")
+}
+
+enum RoomStatus {
+  WAITING
+  READY
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+
+  @@map("room_status")
+}
+
+model GameRoom {
+  id         String     @id @default(uuid())
+  name       String
+  inviteCode String     @unique @map("invite_code")
+  creatorId  String     @map("creator_id")
+  settings   Json       @default("{\"biddingSystem\": \"SAYC\", \"numBoards\": 1, \"timerEnabled\": true, \"timerDuration\": 90, \"vulnerabilityRotation\": \"standard\"}")
+  status     RoomStatus @default(WAITING)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  expiresAt  DateTime   @map("expires_at")
+
+  creator     User         @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  gamePlayers GamePlayer[]
+  games       Game[]
+  invitations RoomInvitation[]
+
+  @@index([inviteCode])
+  @@index([creatorId])
+  @@index([status])
+  @@map("game_rooms")
+}
+
+enum SeatPosition {
+  NORTH
+  SOUTH
+  EAST
+  WEST
+
+  @@map("seat_position")
+}
+
+model GamePlayer {
+  id         String       @id @default(uuid())
+  gameRoomId String       @map("game_room_id")
+  gameId     String?      @map("game_id")
+  userId     String       @map("user_id")
+  seat       SeatPosition
+  isReady    Boolean      @default(false) @map("is_ready")
+  joinedAt   DateTime     @default(now()) @map("joined_at")
+
+  gameRoom GameRoom @relation(fields: [gameRoomId], references: [id], onDelete: Cascade)
+  game     Game?    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameRoomId, seat])
+  @@unique([gameRoomId, userId])
+  @@index([gameRoomId])
+  @@index([gameId])
+  @@index([userId])
+  @@map("game_players")
+}
+
+enum GamePhase {
+  INITIALIZING
+  BIDDING
+  PLAYING
+  SCORING
+  COMPLETED
+
+  @@map("game_phase")
+}
+
+model Game {
+  id              String    @id @default(uuid())
+  gameRoomId      String    @map("game_room_id")
+  phase           GamePhase @default(INITIALIZING)
+  gameState       Json      @default("{\"hands\": {}, \"currentBid\": null, \"bidHistory\": [], \"tricks\": [], \"currentTrick\": [], \"trumpSuit\": null, \"contract\": null}") @map("game_state")
+  deck            Json?
+  currentPlayerId String?   @map("current_player_id")
+  dealerId        String    @map("dealer_id")
+  declarerId      String?   @map("declarer_id")
+  boardNumber     Int       @default(1) @map("board_number")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  endedAt         DateTime? @map("ended_at")
+
+  gameRoom      GameRoom     @relation(fields: [gameRoomId], references: [id], onDelete: Cascade)
+  currentPlayer User?        @relation("CurrentPlayer", fields: [currentPlayerId], references: [id])
+  dealer        User         @relation("Dealer", fields: [dealerId], references: [id])
+  declarer      User?        @relation("Declarer", fields: [declarerId], references: [id])
+  gamePlayers   GamePlayer[]
+  gameMoves     GameMove[]
+  gameResult    GameResult?
+
+  @@index([gameRoomId])
+  @@index([phase])
+  @@index([currentPlayerId])
+  @@map("games")
+}
+
+enum MoveType {
+  BID
+  PASS
+  DOUBLE
+  REDOUBLE
+  PLAY_CARD
+
+  @@map("move_type")
+}
+
+model GameMove {
+  id             String   @id @default(uuid())
+  gameId         String   @map("game_id")
+  playerId       String   @map("player_id")
+  moveType       MoveType @map("move_type")
+  moveData       Json     @map("move_data")
+  sequenceNumber Int      @map("sequence_number")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  game   Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player User @relation(fields: [playerId], references: [id])
+
+  @@unique([gameId, sequenceNumber])
+  @@index([gameId])
+  @@index([gameId, sequenceNumber])
+  @@map("game_moves")
+}
+
+model GameResult {
+  id              String   @id @default(uuid())
+  gameId          String   @unique @map("game_id")
+  winningTeam     String?  @map("winning_team")
+  contractTricks  Int?     @map("contract_tricks")
+  contractSuit    String?  @map("contract_suit")
+  tricksWon       Int?     @map("tricks_won")
+  scoreNS         Int      @default(0) @map("score_ns")
+  scoreEW         Int      @default(0) @map("score_ew")
+  detailedScoring Json?    @map("detailed_scoring")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@map("game_results")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+
+  @@map("invitation_status")
+}
+
+model RoomInvitation {
+  id        String           @id @default(uuid())
+  roomId    String           @map("room_id")
+  inviterId String           @map("inviter_id")
+  inviteeId String           @map("invitee_id")
+  status    InvitationStatus @default(PENDING)
+  createdAt DateTime         @default(now()) @map("created_at")
+  expiresAt DateTime         @map("expires_at")
+
+  room    GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  inviter User     @relation("InvitationsSent", fields: [inviterId], references: [id])
+  invitee User     @relation("InvitationsReceived", fields: [inviteeId], references: [id])
+
+  @@index([roomId])
+  @@index([inviteeId])
+  @@index([status])
+  @@map("room_invitations")
+}
