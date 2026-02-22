@@ -108,6 +108,7 @@ export async function GET(
             hand: playerHand,
             dummyHand,
             bidHistory: gameState.bidHistory || [],
+            currentBid: gameState.currentBid || null,   // highest bid so far (set by bid route)
             currentTrick: gameState.currentTrick || [],
             tricks: gameState.tricks || [],
             tricksWon: calculateTricksWon(gameState.tricks || []),

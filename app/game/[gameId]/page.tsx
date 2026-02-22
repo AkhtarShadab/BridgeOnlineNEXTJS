@@ -55,9 +55,7 @@ export default function GamePage() {
         }
     }, [connected, gameId, game?.roomId, joinGame]);
 
-    // Listen for real-time bid updates. Attach directly to the socket instance
-    // (not via the on/off wrappers) so the cleanup removes exactly this handler
-    // and we never accumulate duplicate listeners.
+    // Listen for real-time bid updates.
     useEffect(() => {
         if (!socket) return;
         console.log('[Game] Attaching game:bid_made listener. Socket id:', socket.id);
@@ -73,6 +71,46 @@ export default function GamePage() {
             socket.off('game:bid_made', handleBidMade);
         };
     }, [socket, fetchGameState]);
+
+    // Listen for another player exiting — redirect remaining players to room lobby.
+    // NOTE: the exiting player also receives this event, so we must ignore it for them
+    // (they are already being redirected to /dashboard by handleExit).
+    useEffect(() => {
+        if (!socket) return;
+
+        const handlePlayerExited = (data: { exitedUserId: string; exitedUsername: string; roomId: string }) => {
+            console.log('[Game] game:player_exited received:', data);
+            // Don't redirect if WE are the one who exited
+            if (data.exitedUserId === session?.user?.id) return;
+            router.push(`/room/${data.roomId}`);
+        };
+
+        socket.on('game:player_exited', handlePlayerExited);
+
+        return () => {
+            socket.off('game:player_exited', handlePlayerExited);
+        };
+    }, [socket, router, session?.user?.id]);
+
+    // Handle the Exit button: call the exit API, then redirect to dashboard
+    const handleExit = async () => {
+        const confirmed = confirm('Are you sure you want to exit? Other players will be sent back to the room lobby.');
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch(`/api/games/${gameId}/exit`, { method: 'POST' });
+            if (response.ok) {
+                router.push('/dashboard');
+            } else {
+                const data = await response.json();
+                alert(data.error || 'Failed to exit game');
+            }
+        } catch (err) {
+            console.error('[Game] Error exiting:', err);
+            // Navigate anyway so the player is not stuck
+            router.push('/dashboard');
+        }
+    };
 
     const handleBid = async (bid: { type: string; level?: number; suit?: string }) => {
         try {
@@ -237,10 +275,10 @@ export default function GamePage() {
                             </div>
                         </div>
                         <button
-                            onClick={() => router.push("/dashboard")}
-                            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
+                            onClick={handleExit}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
                         >
-                            Exit
+                            Exit Game
                         </button>
                     </div>
                 </div>
@@ -390,7 +428,7 @@ export default function GamePage() {
                     <div className="mt-6">
                         <BiddingBox
                             onBid={handleBid}
-                            currentBid={game.contract || null}
+                            currentBid={game.currentBid || null}
                             disabled={!isMyTurn}
                         />
                     </div>
