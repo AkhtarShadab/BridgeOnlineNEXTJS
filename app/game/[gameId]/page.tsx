@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
@@ -73,22 +73,6 @@ export default function GamePage() {
             socket.off('game:bid_made', handleBidMade);
         };
     }, [socket, fetchGameState]);
-
-    // Polling fallback — guarantees all players see the latest state even if
-    // WebSocket delivery fails (network hiccups, reconnects, etc.).
-    // Use a ref so the interval is created once and still calls the latest fetchGameState.
-    const fetchGameStateRef = useRef(fetchGameState);
-    fetchGameStateRef.current = fetchGameState;
-
-    useEffect(() => {
-        if (!gameId) return;
-
-        const interval = setInterval(() => {
-            fetchGameStateRef.current();
-        }, 3000); // poll every 3 seconds
-
-        return () => clearInterval(interval);
-    }, [gameId]); // only restart if gameId changes
 
     const handleBid = async (bid: { type: string; level?: number; suit?: string }) => {
         try {

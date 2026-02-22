@@ -131,35 +131,6 @@ export default function RoomPage() {
         };
     }, [connected, on, off, loadRoomData, router, roomId]);
 
-    // Polling fallback - refresh room data and check if game started
-    useEffect(() => {
-        if (!room) return;
-
-        const interval = setInterval(async () => {
-            console.log('Polling: Refreshing room data...');
-
-            try {
-                const response = await fetch(`/api/rooms/${roomId}`);
-                if (response.ok) {
-                    const data = await response.json();
-
-                    // If room status changed to IN_PROGRESS and we have an active game, redirect
-                    if (data.status === 'IN_PROGRESS' && data.activeGameId) {
-                        console.log('📢 Polling detected game started! Redirecting to:', data.activeGameId);
-                        router.push(`/game/${data.activeGameId}`);
-                        return;
-                    }
-
-                    setRoom(data);
-                }
-            } catch (error) {
-                console.error('Error polling room data:', error);
-            }
-        }, 2000); // Poll every 2 seconds
-
-        return () => clearInterval(interval);
-    }, [room, roomId, router]);
-
     const handleSelectSeat = async (seat: string) => {
         try {
             const response = await fetch(`/api/rooms/${roomId}/seat`, {
