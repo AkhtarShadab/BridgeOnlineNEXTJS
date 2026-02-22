@@ -9,7 +9,7 @@ const respondSchema = z.object({
 
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: { invitationId: string } }
+    { params }: { params: Promise<{ invitationId: string }> }
 ) {
     try {
         const session = await auth();
@@ -17,7 +17,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { invitationId } = params;
+        const { invitationId } = await params;
         const body = await req.json();
         const { action } = respondSchema.parse(body);
 

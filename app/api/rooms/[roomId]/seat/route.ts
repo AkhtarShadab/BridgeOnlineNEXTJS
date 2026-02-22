@@ -9,8 +9,9 @@ const seatSchema = z.object({
 
 /**
  * PATCH /api/rooms/[roomId]/seat
- * Change player's seat in the room
- * Body: { seat: "NORTH" | "SOUTH" | "EAST" | "WEST" }
+ * Change player's seat in the room.
+ * The check-and-update runs inside a transaction to prevent race conditions
+ * where two players try to claim the same seat simultaneously.
  */
 export async function PATCH(
     request: NextRequest,
@@ -30,49 +31,37 @@ export async function PATCH(
         const body = await request.json();
         const { seat } = seatSchema.parse(body);
 
-        // Find the player's record in this room
-        const gamePlayer = await prisma.gamePlayer.findFirst({
-            where: {
-                gameRoomId: roomId,
-                userId: session.user.id,
-            },
-        });
+        const updated = await prisma.$transaction(async (tx) => {
+            // Find the calling player's record
+            const gamePlayer = await tx.gamePlayer.findFirst({
+                where: { gameRoomId: roomId, userId: session.user.id },
+            });
 
-        if (!gamePlayer) {
-            return NextResponse.json(
-                { error: 'You are not in this room' },
-                { status: 404 }
-            );
-        }
+            if (!gamePlayer) {
+                throw new Error('NOT_IN_ROOM');
+            }
 
-        // Check if the seat is already taken by another player
-        const seatTaken = await prisma.gamePlayer.findFirst({
-            where: {
-                gameRoomId: roomId,
-                seat,
-                userId: {
-                    not: session.user.id,
+            // Check if the target seat is already taken by someone else
+            const seatTaken = await tx.gamePlayer.findFirst({
+                where: {
+                    gameRoomId: roomId,
+                    seat,
+                    userId: { not: session.user.id },
                 },
-            },
+            });
+
+            if (seatTaken) {
+                throw new Error('SEAT_TAKEN');
+            }
+
+            // Atomically move to the new seat
+            return tx.gamePlayer.update({
+                where: { id: gamePlayer.id },
+                data: { seat },
+            });
         });
 
-        if (seatTaken) {
-            return NextResponse.json(
-                { error: 'This seat is already taken' },
-                { status: 400 }
-            );
-        }
-
-        // Update the player's seat
-        const updated = await prisma.gamePlayer.update({
-            where: { id: gamePlayer.id },
-            data: { seat },
-        });
-
-        return NextResponse.json({
-            success: true,
-            seat: updated.seat,
-        });
+        return NextResponse.json({ success: true, seat: updated.seat });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return NextResponse.json(
@@ -80,10 +69,22 @@ export async function PATCH(
                 { status: 400 }
             );
         }
+
+        if (error instanceof Error) {
+            if (error.message === 'NOT_IN_ROOM') {
+                return NextResponse.json({ error: 'You are not in this room' }, { status: 404 });
+            }
+            if (error.message === 'SEAT_TAKEN') {
+                return NextResponse.json({ error: 'This seat is already taken' }, { status: 409 });
+            }
+            // Prisma unique constraint (P2002) — fallback if two requests raced through
+            if ((error as any).code === 'P2002') {
+                return NextResponse.json({ error: 'This seat was just taken by another player' }, { status: 409 });
+            }
+        }
+
         console.error('Error changing seat:', error);
-        return NextResponse.json(
-            { error: 'Internal server error' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
+

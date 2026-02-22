@@ -1,49 +1,289 @@
 "use client";
 
-import { useState } from "react";
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-interface BidLevel {
-    level: number;
-    suit: string;
+type Seat = 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
+type Team = 'NS' | 'EW';
+
+interface BidLevel { level: number; suit: string; }
+interface BidEntry {
+    seat: Seat;
+    type: 'bid' | 'pass' | 'double' | 'redouble';
+    bid?: { level: number; suit: string };
 }
+interface Vulnerability { NS: boolean; EW: boolean; }
 
 interface BiddingBoxProps {
     onBid: (bid: { type: string; level?: number; suit?: string }) => void;
-    currentBid: BidLevel | null; // highest bid so far — bids ≤ this are blocked
-    disabled?: boolean;          // true when it's not this player's turn
+    currentBid: BidLevel | null;
+    bidHistory?: BidEntry[];
+    vulnerability?: Vulnerability;
+    playerSeat?: string;   // current player's seat (NORTH/SOUTH/EAST/WEST)
+    disabled?: boolean;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const SUITS = [
-    { abbr: 'C', symbol: '♣', label: 'Clubs', color: 'text-gray-800 dark:text-gray-200' },
-    { abbr: 'D', symbol: '♦', label: 'Diamonds', color: 'text-red-600' },
-    { abbr: 'H', symbol: '♥', label: 'Hearts', color: 'text-red-600' },
-    { abbr: 'S', symbol: '♠', label: 'Spades', color: 'text-gray-800 dark:text-gray-200' },
-    { abbr: 'NT', symbol: 'NT', label: 'No Trump', color: 'text-blue-600' },
+    { abbr: 'C', symbol: '♣', color: 'text-gray-800 dark:text-gray-200' },
+    { abbr: 'D', symbol: '♦', color: 'text-red-500' },
+    { abbr: 'H', symbol: '♥', color: 'text-red-500' },
+    { abbr: 'S', symbol: '♠', color: 'text-gray-800 dark:text-gray-200' },
+    { abbr: 'NT', symbol: 'NT', color: 'text-blue-600' },
 ] as const;
 
 const SUIT_ORDER = ['C', 'D', 'H', 'S', 'NT'];
 const LEVELS = [1, 2, 3, 4, 5, 6, 7];
 
-/** Returns true when (level, suit) is strictly higher than currentBid */
+// ── Bridge helpers ────────────────────────────────────────────────────────────
+
+const seatTeam = (seat: string): Team =>
+    seat === 'NORTH' || seat === 'SOUTH' ? 'NS' : 'EW';
+
+function suitSymbol(abbr: string) {
+    return SUITS.find(s => s.abbr === abbr)?.symbol ?? abbr;
+}
+function suitColor(abbr: string) {
+    return SUITS.find(s => s.abbr === abbr)?.color ?? '';
+}
+
 function isBidValid(level: number, suit: string, currentBid: BidLevel | null): boolean {
     if (!currentBid) return true;
     if (level > currentBid.level) return true;
-    if (level === currentBid.level) {
+    if (level === currentBid.level)
         return SUIT_ORDER.indexOf(suit) > SUIT_ORDER.indexOf(currentBid.suit);
-    }
     return false;
 }
 
-/** Convert a suit abbreviation to its display symbol */
-function suitSymbol(abbr: string): string {
-    return SUITS.find(s => s.abbr === abbr)?.symbol ?? abbr;
+/**
+ * Determine whether Double / Redouble are legally available for the current player.
+ *
+ * Rules (ACBL):
+ *  - DOUBLE   is valid when the last non-pass call was a bid by an opponent team AND
+ *              it has not yet been doubled/redoubled.
+ *  - REDOUBLE is valid when the last non-pass call was a double by an opponent team.
+ *  - Both are unavailable when the last non-pass call was made by own team.
+ */
+function getDoubleState(
+    bidHistory: BidEntry[],
+    playerSeat: string,
+): { canDouble: boolean; canRedouble: boolean; doubledBy: Team | null; redoubled: boolean } {
+    const myTeam = seatTeam(playerSeat);
+
+    // Walk backward to find the last non-pass action
+    const last = [...bidHistory].reverse().find(b => b.type !== 'pass');
+
+    if (!last) return { canDouble: false, canRedouble: false, doubledBy: null, redoubled: false };
+
+    const callerTeam = seatTeam(last.seat);
+    const isOpponent = callerTeam !== myTeam;
+
+    if (last.type === 'bid' && isOpponent)
+        return { canDouble: true, canRedouble: false, doubledBy: null, redoubled: false };
+
+    if (last.type === 'double' && isOpponent)
+        return { canDouble: false, canRedouble: true, doubledBy: callerTeam, redoubled: false };
+
+    // Redoubled by us means we hold the redouble, but opponents can't double again
+    if (last.type === 'redouble')
+        return { canDouble: false, canRedouble: false, doubledBy: callerTeam, redoubled: true };
+
+    return { canDouble: false, canRedouble: false, doubledBy: null, redoubled: false };
 }
 
-export default function BiddingBox({ onBid, currentBid, disabled }: BiddingBoxProps) {
-    const handleBid = (level: number, suit: string) => {
-        if (!isBidValid(level, suit, currentBid)) return;
-        onBid({ type: 'bid', level, suit });
+/**
+ * Determine the current doubling status of the contract (for score display).
+ *
+ * Returns: 'none' | 'doubled' | 'redoubled'
+ * Resets to 'none' whenever a new bid is placed.
+ */
+function contractDoubleStatus(bidHistory: BidEntry[]): 'none' | 'doubled' | 'redoubled' {
+    // Walk backward, stopping at the last actual 'bid'
+    let status: 'none' | 'doubled' | 'redoubled' = 'none';
+    for (let i = bidHistory.length - 1; i >= 0; i--) {
+        const entry = bidHistory[i];
+        if (entry.type === 'bid') break;           // new bid clears doubles
+        if (entry.type === 'redouble') { status = 'redoubled'; break; }
+        if (entry.type === 'double') { status = 'doubled'; break; }
+    }
+    return status;
+}
+
+// ── Score engine ──────────────────────────────────────────────────────────────
+
+function trickValue(suit: string): number {
+    if (suit === 'NT') return 0; // handled separately
+    return suit === 'H' || suit === 'S' ? 30 : 20;
+}
+
+function contractPoints(level: number, suit: string, modifier: 'none' | 'doubled' | 'redoubled'): number {
+    const base = suit === 'NT' ? 40 + (level - 1) * 30 : level * trickValue(suit);
+    if (modifier === 'doubled') return base * 2;
+    if (modifier === 'redoubled') return base * 4;
+    return base;
+}
+
+function bridgeScore(
+    level: number,
+    suit: string,
+    vulnerable: boolean,
+    overtricks: number,
+    modifier: 'none' | 'doubled' | 'redoubled' = 'none',
+): number {
+    const cp = contractPoints(level, suit, modifier);
+    const isGame = cp >= 100;
+
+    const bonus = isGame ? (vulnerable ? 500 : 300) : 50;
+
+    let slamBonus = 0;
+    if (level === 6) slamBonus = vulnerable ? 750 : 500;
+    if (level === 7) slamBonus = vulnerable ? 1500 : 1000;
+
+    // Insult bonus for making a doubled/redoubled contract
+    const insult = modifier === 'doubled' ? 50 : modifier === 'redoubled' ? 100 : 0;
+
+    // Overtrick value
+    let otPoints = 0;
+    if (modifier === 'none') {
+        const otVal = suit === 'NT' ? 30 : trickValue(suit);
+        otPoints = overtricks * otVal;
+    } else if (modifier === 'doubled') {
+        otPoints = overtricks * (vulnerable ? 200 : 100);
+    } else {
+        otPoints = overtricks * (vulnerable ? 400 : 200);
+    }
+
+    return cp + bonus + slamBonus + insult + otPoints;
+}
+
+const maxOvertricks = (level: number) => 7 - level;
+
+// ── Score Panel ───────────────────────────────────────────────────────────────
+
+function ScorePanel({
+    bidHistory,
+    vulnerability,
+}: {
+    bidHistory: BidEntry[];
+    vulnerability: Vulnerability;
+}) {
+    const bids = bidHistory.filter(b => b.type === 'bid' && b.bid);
+    const nsLastBid = [...bids].reverse().find(b => b.seat === 'NORTH' || b.seat === 'SOUTH')?.bid ?? null;
+    const ewLastBid = [...bids].reverse().find(b => b.seat === 'EAST' || b.seat === 'WEST')?.bid ?? null;
+    const modifier = contractDoubleStatus(bidHistory);
+
+    if (!nsLastBid && !ewLastBid) {
+        return (
+            <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-center">
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
+                    Score Calculator
+                </p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                    No bids yet — scores will appear here
+                </p>
+            </div>
+        );
+    }
+
+    const teams: { label: string; bid: BidLevel | null; vul: boolean }[] = [
+        { label: 'NS', bid: nsLastBid, vul: vulnerability.NS },
+        { label: 'EW', bid: ewLastBid, vul: vulnerability.EW },
+    ];
+
+    // The modifier applies to the current highest bid (the one that won the auction so far)
+    // We show modified scores for the team whose bid equals currentBid
+    const getModifier = (team: 'NS' | 'EW', bid: BidLevel | null): 'none' | 'doubled' | 'redoubled' => {
+        if (!bid) return 'none';
+        // Check if this team's bid is the latest actual bid (i.e., it's the current contract)
+        const lastBidEntry = [...bids].reverse()[0];
+        if (!lastBidEntry) return 'none';
+        const lastBidTeam = seatTeam(lastBidEntry.seat);
+        return lastBidTeam === team ? modifier : 'none';
     };
+
+    return (
+        <div className="mb-4">
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center mb-2">
+                Score Calculator
+                {modifier !== 'none' && (
+                    <span className={`ml-2 px-1.5 py-0.5 rounded text-white text-xs ${modifier === 'doubled' ? 'bg-red-500' : 'bg-red-800'}`}>
+                        {modifier === 'doubled' ? 'DBL' : 'RDBL'}
+                    </span>
+                )}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+                {teams.map(({ label, bid, vul }) => {
+                    const teamKey = label as Team;
+                    const mod = getModifier(teamKey, bid);
+                    return (
+                        <div
+                            key={label}
+                            className={`rounded-lg p-2 border ${bid
+                                    ? vul
+                                        ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
+                                        : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700'
+                                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+                                }`}
+                        >
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="font-bold text-sm text-slate-700 dark:text-slate-200">{label}</span>
+                                <div className="flex items-center gap-1">
+                                    {mod === 'doubled' && <span className="text-xs bg-red-500 text-white px-1 rounded">X</span>}
+                                    {mod === 'redoubled' && <span className="text-xs bg-red-800 text-white px-1 rounded">XX</span>}
+                                    {vul && <span className="text-xs text-red-500 font-semibold">VUL</span>}
+                                </div>
+                            </div>
+
+                            {!bid ? (
+                                <p className="text-xs text-slate-400 text-center py-1">—</p>
+                            ) : (
+                                <>
+                                    <div className="flex items-center gap-1 mb-2">
+                                        <span className="text-xs text-slate-500 dark:text-slate-400">Last bid:</span>
+                                        <span className={`text-sm font-bold ${suitColor(bid.suit)}`}>
+                                            {bid.level}{suitSymbol(bid.suit)}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-slate-600 dark:text-slate-400 font-medium">Made</span>
+                                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                {bridgeScore(bid.level, bid.suit, vul, 0, mod)}
+                                            </span>
+                                        </div>
+                                        {Array.from({ length: maxOvertricks(bid.level) }, (_, i) => i + 1).map(ot => (
+                                            <div key={ot} className="flex justify-between text-xs">
+                                                <span className="text-slate-500 dark:text-slate-500">+{ot}</span>
+                                                <span className="text-slate-700 dark:text-slate-300">
+                                                    {bridgeScore(bid.level, bid.suit, vul, ot, mod)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export default function BiddingBox({
+    onBid,
+    currentBid,
+    bidHistory = [],
+    vulnerability = { NS: false, EW: false },
+    playerSeat = '',
+    disabled,
+}: BiddingBoxProps) {
+
+    const { canDouble, canRedouble } = playerSeat
+        ? getDoubleState(bidHistory, playerSeat)
+        : { canDouble: false, canRedouble: false };
 
     return (
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
@@ -51,27 +291,11 @@ export default function BiddingBox({ onBid, currentBid, disabled }: BiddingBoxPr
                 Bidding Box
             </h2>
 
-            {/* Current highest bid indicator */}
-            {currentBid ? (
-                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-600 rounded-lg text-center">
-                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1">
-                        Highest Bid — must bid higher than:
-                    </p>
-                    <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">
-                        {currentBid.level}{suitSymbol(currentBid.suit)}
-                    </p>
-                </div>
-            ) : (
-                <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg text-center">
-                    <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                        No bids yet — any bid is valid
-                    </p>
-                </div>
-            )}
+            <ScorePanel bidHistory={bidHistory} vulnerability={vulnerability} />
 
-            {/* Suit header row */}
+            {/* Suit column headers */}
             <div className="grid grid-cols-6 gap-1 mb-1">
-                <div /> {/* level label column */}
+                <div />
                 {SUITS.map(suit => (
                     <div key={suit.abbr} className={`text-center text-sm font-bold ${suit.color}`}>
                         {suit.symbol}
@@ -79,49 +303,35 @@ export default function BiddingBox({ onBid, currentBid, disabled }: BiddingBoxPr
                 ))}
             </div>
 
-            {/* Bid grid — 7 levels × 5 suits */}
+            {/* Bid grid */}
             <div className="space-y-1 mb-6">
                 {LEVELS.map(level => (
                     <div key={level} className="grid grid-cols-6 gap-1 items-center">
-                        {/* Level number */}
                         <div className="text-center font-bold text-gray-600 dark:text-gray-400 text-sm">
                             {level}
                         </div>
-
-                        {/* Suit buttons */}
                         {SUITS.map(suit => {
                             const valid = isBidValid(level, suit.abbr, currentBid);
-                            const blocked = !valid;
-                            const isExactCurrentBid =
-                                currentBid?.level === level && currentBid?.suit === suit.abbr;
-
+                            const isCurrentBid = currentBid?.level === level && currentBid?.suit === suit.abbr;
                             return (
                                 <button
                                     key={`${level}-${suit.abbr}`}
-                                    onClick={() => handleBid(level, suit.abbr)}
-                                    disabled={disabled || blocked}
-                                    title={
-                                        blocked
-                                            ? `${level}${suit.symbol} is lower than or equal to the current bid`
-                                            : `Bid ${level}${suit.symbol}`
-                                    }
+                                    onClick={() => { if (valid) onBid({ type: 'bid', level, suit: suit.abbr }); }}
+                                    disabled={disabled || !valid}
+                                    title={!valid ? `${level}${suit.symbol} ≤ current bid` : `Bid ${level}${suit.symbol}`}
                                     className={`
                                         h-10 rounded-md font-bold text-base transition-all duration-150 border-2
-                                        ${isExactCurrentBid
-                                            // highlight the exact current bid
+                                        ${isCurrentBid
                                             ? 'bg-amber-100 dark:bg-amber-800 border-amber-400 dark:border-amber-500 opacity-60 cursor-not-allowed'
-                                            : blocked
-                                                // clearly blocked bids
-                                                ? 'bg-gray-100 dark:bg-gray-700/40 border-gray-200 dark:border-gray-700 opacity-30 cursor-not-allowed'
+                                            : !valid
+                                                ? 'bg-gray-100 dark:bg-gray-700/40 border-gray-200 dark:border-gray-700 opacity-25 cursor-not-allowed'
                                                 : disabled
-                                                    // valid but not player's turn
                                                     ? 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 opacity-50 cursor-not-allowed'
-                                                    // valid & clickable
                                                     : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 hover:border-emerald-500 hover:scale-105 cursor-pointer shadow-sm'
                                         }
                                     `}
                                 >
-                                    <span className={blocked ? 'text-gray-400 dark:text-gray-600' : suit.color}>
+                                    <span className={!valid ? 'text-gray-400 dark:text-gray-600' : suit.color}>
                                         {suit.symbol}
                                     </span>
                                 </button>
@@ -131,8 +341,9 @@ export default function BiddingBox({ onBid, currentBid, disabled }: BiddingBoxPr
                 ))}
             </div>
 
-            {/* Action buttons: Pass / Double / Redouble */}
+            {/* Action buttons */}
             <div className="grid grid-cols-3 gap-3">
+                {/* Pass — always available when it's your turn */}
                 <button
                     onClick={() => onBid({ type: 'pass' })}
                     disabled={disabled}
@@ -140,23 +351,43 @@ export default function BiddingBox({ onBid, currentBid, disabled }: BiddingBoxPr
                 >
                     Pass
                 </button>
+
+                {/* Double — only against opponent's last bid */}
                 <button
                     onClick={() => onBid({ type: 'double' })}
-                    disabled={disabled || !currentBid}
-                    title={!currentBid ? 'No bid to double' : 'Double the current contract'}
-                    className="py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                    disabled={disabled || !canDouble}
+                    title={
+                        !canDouble
+                            ? 'Double is only allowed against the opponent\'s last bid'
+                            : 'Double the opponent\'s bid (×2 trick value)'
+                    }
+                    className="py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-500 text-white font-bold rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                 >
-                    Dbl
+                    Dbl ×
                 </button>
+
+                {/* Redouble — only after opponent doubled your team's bid */}
                 <button
                     onClick={() => onBid({ type: 'redouble' })}
-                    disabled={disabled || !currentBid}
-                    title={!currentBid ? 'No bid to redouble' : 'Redouble'}
-                    className="py-3 bg-red-800 hover:bg-red-900 text-white font-bold rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                    disabled={disabled || !canRedouble}
+                    title={
+                        !canRedouble
+                            ? 'Redouble is only allowed after the opponent has doubled'
+                            : 'Redouble (×4 trick value)'
+                    }
+                    className="py-3 bg-red-800 hover:bg-red-900 disabled:bg-red-800 text-white font-bold rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                 >
-                    Rdbl
+                    Rdbl ××
                 </button>
             </div>
+
+            {/* Contextual hint for double/redouble state */}
+            {(canDouble || canRedouble) && !disabled && (
+                <p className="mt-2 text-xs text-center text-slate-500 dark:text-slate-400">
+                    {canDouble && '💡 You may Double the opponent\'s bid'}
+                    {canRedouble && '💡 You may Redouble (opponent doubled your team\'s bid)'}
+                </p>
+            )}
         </div>
     );
 }
