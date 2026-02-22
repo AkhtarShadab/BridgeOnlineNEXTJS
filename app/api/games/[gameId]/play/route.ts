@@ -37,6 +37,7 @@ export async function POST(
             where: { id: gameId },
             include: {
                 gamePlayers: true,
+                gameRoom: true,
             },
         });
 

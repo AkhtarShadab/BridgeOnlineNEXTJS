@@ -13,7 +13,9 @@ export interface Bid {
 export interface BidAction {
     type: 'bid' | 'pass' | 'double' | 'redouble';
     bid?: Bid;
-    player: string; // player ID
+    player: string;    // player userId
+    playerName?: string; // display name
+    seat?: string;     // NORTH | SOUTH | EAST | WEST
 }
 
 export interface Contract extends Bid {

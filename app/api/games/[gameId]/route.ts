@@ -36,6 +36,9 @@ export async function GET(
                         },
                     },
                 },
+                gameRoom: {
+                    select: { id: true },
+                },
                 currentPlayer: {
                     select: {
                         id: true,
@@ -95,6 +98,7 @@ export async function GET(
 
         return NextResponse.json({
             gameId: game.id,
+            roomId: game.gameRoom?.id,
             phase: game.phase,
             boardNumber: game.boardNumber,
             currentPlayer: game.currentPlayer,
