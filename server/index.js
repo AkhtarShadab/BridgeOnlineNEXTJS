@@ -105,6 +105,19 @@ app.prepare().then(() => {
             });
         });
 
+        // Explicit join for a game session (called once game data loads on the client)
+        // This gives two independent delivery paths: room-* (from lobby) and game-* (from here)
+        socket.on('game:join', ({ gameId, roomId }) => {
+            if (gameId) {
+                socket.join(`game-${gameId}`);
+                console.log(`Socket ${socket.id} joined game-${gameId}`);
+            }
+            if (roomId) {
+                socket.join(`room-${roomId}`);
+                console.log(`Socket ${socket.id} joined room-${roomId}`);
+            }
+        });
+
         // Game bidding
         socket.on('game:make_bid', (data) => {
             const { roomId, bid } = data;

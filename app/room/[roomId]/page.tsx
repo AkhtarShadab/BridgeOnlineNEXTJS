@@ -4,6 +4,7 @@ import { useState, useEffect, use, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useSocket } from "@/lib/hooks/useSocket";
+import { useSocketContext } from "@/lib/context/SocketContext";
 import InviteFriendsModal from "./InviteFriendsModal";
 
 interface Player {
@@ -38,9 +39,20 @@ export default function RoomPage() {
     const [copied, setCopied] = useState(false);
     const [showInviteModal, setShowInviteModal] = useState(false);
 
-    // CRITICAL FIX: Pass roomId to useSocket so it automatically joins the Socket.io room!
-    // WebSocket integration
-    const { connected, on, off, emit } = useSocket({ roomId });
+    // Use the global socket so join/leave persists across page navigations
+    const { socket, connected, joinRoom } = useSocketContext();
+
+    // Minimal shims so the rest of the file keeps working unchanged
+    const on = (event: string, cb: (...args: any[]) => void) => socket?.on(event, cb);
+    const off = (event: string, cb?: (...args: any[]) => void) => cb ? socket?.off(event, cb) : socket?.off(event);
+    const emit = (event: string, ...args: any[]) => { if (socket && connected) socket.emit(event, ...args); };
+
+    // Join the room channel whenever we have the roomId and socket is ready
+    useEffect(() => {
+        if (connected && roomId) {
+            joinRoom(roomId);
+        }
+    }, [connected, roomId, joinRoom]);
 
     // Load room data function (defined before useEffects that use it)
     const loadRoomData = useCallback(async () => {

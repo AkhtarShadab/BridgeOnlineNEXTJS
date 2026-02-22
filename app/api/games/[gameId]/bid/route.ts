@@ -39,7 +39,12 @@ export async function POST(
         const game = await prisma.game.findUnique({
             where: { id: gameId },
             include: {
-                gamePlayers: true,
+                gamePlayers: {
+                    include: {
+                        user: { select: { id: true, username: true } },
+                    },
+                },
+                gameRoom: true,
             },
         });
 
@@ -78,10 +83,13 @@ export async function POST(
         const gameState = game.gameState as any;
         const bidHistory: BidAction[] = gameState.bidHistory || [];
 
-        // Create bid action
+        // Create bid action — include username for display in bid history
+        const biddingPlayer = game.gamePlayers.find(p => p.userId === session.user.id);
         const bidAction: BidAction = {
             type: action,
             player: session.user.id,
+            playerName: (biddingPlayer as any)?.user?.username || 'Unknown',
+            seat: (biddingPlayer as any)?.seat || '',
             bid: bid ? {
                 level: bid.level as any,
                 suit: bid.suit,
@@ -135,16 +143,27 @@ export async function POST(
             },
         });
 
-        // Emit WebSocket event to notify all players
+        // Emit WebSocket event to notify all players via both channels:
+        // - room-* : joined during lobby phase
+        // - game-* : joined when game page loads (after roomId is fetched)
         if (global.io) {
-            global.io.to(`room-${game.gameRoom.id}`).emit('game:bid_made', {
-                gameId,
-                bid: bidAction,
-                biddingComplete,
-                contract,
-                phase: newPhase,
-            });
-            console.log(`Emitted game:bid_made to room-${game.gameRoom.id}`);
+            const roomKey = `room-${game.gameRoom.id}`;
+            const gameKey = `game-${gameId}`;
+            const roomSockets = global.io.sockets.adapter.rooms.get(roomKey)?.size ?? 0;
+            const gameSockets = global.io.sockets.adapter.rooms.get(gameKey)?.size ?? 0;
+            console.log(`[BidRoute] Emitting game:bid_made → ${roomKey} (${roomSockets} sockets) + ${gameKey} (${gameSockets} sockets)`);
+            global.io
+                .to(roomKey)
+                .to(gameKey)
+                .emit('game:bid_made', {
+                    gameId,
+                    bid: bidAction,
+                    biddingComplete,
+                    contract,
+                    phase: newPhase,
+                });
+        } else {
+            console.error('[BidRoute] ⚠️ global.io is not set — WebSocket broadcast skipped!');
         }
 
         // Record move
