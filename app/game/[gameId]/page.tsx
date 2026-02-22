@@ -437,6 +437,9 @@ export default function GamePage() {
                         <BiddingBox
                             onBid={handleBid}
                             currentBid={game.currentBid || null}
+                            bidHistory={game.bidHistory || []}
+                            vulnerability={game.vulnerability || { NS: false, EW: false }}
+                            playerSeat={game.playerSeat}
                             disabled={!isMyTurn}
                         />
                     </div>

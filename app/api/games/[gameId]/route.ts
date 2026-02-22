@@ -108,12 +108,13 @@ export async function GET(
             hand: playerHand,
             dummyHand,
             bidHistory: gameState.bidHistory || [],
-            currentBid: gameState.currentBid || null,   // highest bid so far (set by bid route)
+            currentBid: gameState.currentBid || null,
             currentTrick: gameState.currentTrick || [],
             tricks: gameState.tricks || [],
             tricksWon: calculateTricksWon(gameState.tricks || []),
             contract: gameState.contract,
             trumpSuit: gameState.trumpSuit,
+            vulnerability: gameState.vulnerability || { NS: false, EW: false },
             players: game.gamePlayers.map(p => ({
                 userId: p.userId,
                 username: p.user.username,
