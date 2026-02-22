@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
@@ -72,16 +72,20 @@ export default function GamePage() {
         };
     }, [socket, fetchGameState]);
 
+    // Flag set synchronously the moment the player clicks Exit.
+    // Using a ref (not state) so changes are immediately visible inside the socket handler
+    // without waiting for a re-render — avoids the race between socket event and navigation.
+    const isExitingRef = useRef(false);
+
     // Listen for another player exiting — redirect remaining players to room lobby.
-    // NOTE: the exiting player also receives this event, so we must ignore it for them
-    // (they are already being redirected to /dashboard by handleExit).
+    // The exiting player also receives this event but ignores it via isExitingRef.
     useEffect(() => {
         if (!socket) return;
 
         const handlePlayerExited = (data: { exitedUserId: string; exitedUsername: string; roomId: string }) => {
-            console.log('[Game] game:player_exited received:', data);
-            // Don't redirect if WE are the one who exited
-            if (data.exitedUserId === session?.user?.id) return;
+            console.log('[Game] game:player_exited received:', data, 'isExiting:', isExitingRef.current);
+            // If WE triggered the exit, ignore — we're already being sent to /dashboard
+            if (isExitingRef.current) return;
             router.push(`/room/${data.roomId}`);
         };
 
@@ -90,12 +94,16 @@ export default function GamePage() {
         return () => {
             socket.off('game:player_exited', handlePlayerExited);
         };
-    }, [socket, router, session?.user?.id]);
+    }, [socket, router]);
 
-    // Handle the Exit button: call the exit API, then redirect to dashboard
+    // Handle the Exit button
     const handleExit = async () => {
         const confirmed = confirm('Are you sure you want to exit? Other players will be sent back to the room lobby.');
         if (!confirmed) return;
+
+        // Set the flag SYNCHRONOUSLY before any async work so the socket handler
+        // ignores the incoming game:player_exited event immediately.
+        isExitingRef.current = true;
 
         try {
             const response = await fetch(`/api/games/${gameId}/exit`, { method: 'POST' });
@@ -103,12 +111,12 @@ export default function GamePage() {
                 router.push('/dashboard');
             } else {
                 const data = await response.json();
+                isExitingRef.current = false; // reset on failure
                 alert(data.error || 'Failed to exit game');
             }
         } catch (err) {
             console.error('[Game] Error exiting:', err);
-            // Navigate anyway so the player is not stuck
-            router.push('/dashboard');
+            router.push('/dashboard'); // navigate anyway so player isn't stuck
         }
     };
 
