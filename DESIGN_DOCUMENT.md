@@ -23,13 +23,15 @@ BridgeOnline is a web-based, real-time multiplayer Bridge card game built on **N
 - **Styling**: Tailwind CSS with custom design system
 - **State Management**: Zustand or React Context + hooks
 - **Real-time**: Socket.io Client
+- **Voice Chat**: WebRTC (`RTCPeerConnection`, `getUserMedia`) — peer-to-peer audio
 - **UI Components**: shadcn/ui or Radix UI primitives
 - **Forms**: React Hook Form + Zod validation
 
 #### Backend
 - **Runtime**: Node.js 18+
 - **API**: Next.js API Routes (App Router format)
-- **Real-time**: Socket.io Server
+- **Real-time**: Socket.io Server (game data + WebRTC signaling relay)
+- **Voice Relay**: STUN server (Google free) + TURN server (coturn, self-hosted) for NAT traversal
 - **Authentication**: NextAuth.js v5 (Auth.js) or Clerk
 - **Database**: PostgreSQL with Prisma ORM
 - **Caching**: Redis (for session management and game state)
@@ -814,6 +816,21 @@ function calculateScore(contract, tricksWon, declarer, vulnerability) {
 | `game:make_bid` | `{ action, bid }` | Bid action |
 | `game:play_card` | `{ card }` | Play card |
 | `chat:message` | `{ message }` | Send chat message |
+| `voice:offer` | `{ targetUserId, sdp }` | WebRTC offer (voice signaling) |
+| `voice:answer` | `{ targetUserId, sdp }` | WebRTC answer (voice signaling) |
+| `voice:ice_candidate` | `{ targetUserId, candidate }` | ICE candidate exchange |
+| `voice:toggle_mute` | `{ muted }` | Broadcast own mute state |
+| `voice:leave` | `{ }` | Leave voice session |
+
+**Server → Client Events (additional for voice)**
+
+| Event Name | Payload | Description |
+|------------|---------|-------------|
+| `voice:offer` | `{ fromUserId, sdp }` | Forward WebRTC offer to peer |
+| `voice:answer` | `{ fromUserId, sdp }` | Forward WebRTC answer to peer |
+| `voice:ice_candidate` | `{ fromUserId, candidate }` | Forward ICE candidate to peer |
+| `voice:user_muted` | `{ userId, muted }` | Peer toggled mute |
+| `voice:user_left` | `{ userId }` | Peer left voice |
 
 ### 5.2 Socket Connection Flow
 
@@ -841,6 +858,105 @@ socket.emit('game:make_bid', {
   bid: { level: 1, suit: 'H' }
 });
 ```
+
+---
+
+### 5.3 Voice Chat Architecture (WebRTC)
+
+> **Why WebRTC for voice, not WebSocket?**
+> Voice audio must travel peer-to-peer at low latency. WebSocket only handles text/binary data through a server, adding ~100–300ms extra delay. WebRTC uses UDP directly between browsers, achieving sub-50ms voice latency. The existing WebSocket connection is **reused** only for WebRTC signaling (exchanging SDP offers/answers and ICE candidates).
+
+#### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   BridgeOnline Server                   │
+│  Socket.io (game events AND voice signaling relay)      │
+└───────┬──────────────────────────────────────┬──────────┘
+        │ WebSocket (signaling only)            │
+   ┌────┴────┐  WebRTC Audio (P2P)   ┌─────────┴────┐
+   │ Player A│◄──────────────────────│   Player B   │
+   └────┬────┘                       └──────────────┘
+        │ WebRTC Audio (P2P)               ▲
+   ┌────┴────┐  WebRTC Audio (P2P)   ┌────┴──────────┐
+   │ Player C│◄──────────────────────│   Player D   │
+   └─────────┘                       └──────────────┘
+
+   [If NAT blocks P2P → audio relayed via TURN server]
+```
+
+#### Voice Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant A as Player A (Joiner)
+    participant S as Server (Socket.io)
+    participant B as Player B (Existing)
+
+    A->>S: room:join
+    S->>A: room:player_joined (list of existing peers)
+    A->>S: voice:offer { targetUserId: B, sdp: offer }
+    S->>B: voice:offer { fromUserId: A, sdp: offer }
+    B->>S: voice:answer { targetUserId: A, sdp: answer }
+    S->>A: voice:answer { fromUserId: B, sdp: answer }
+    A-->>S: voice:ice_candidate (loop)
+    S-->>B: voice:ice_candidate (loop)
+    B-->>S: voice:ice_candidate (loop)
+    S-->>A: voice:ice_candidate (loop)
+    Note over A,B: RTCPeerConnection established — direct UDP audio
+```
+
+#### P2P Mesh Topology (4 Players)
+
+With 4 players, each player maintains **3 peer connections** (full mesh):
+- Total connections in room: 6 RTCPeerConnections
+- Audio flows directly between peers (ultra-low latency)
+- Signaling messages routed through Socket.io server
+
+#### STUN / TURN Configuration
+
+```javascript
+// Client-side ICE server config
+const iceServers = [
+  // Free STUN servers (Google) — handles ~85% of users
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // TURN server — required for users behind strict NAT/firewalls
+  {
+    urls: 'turn:your-turn-server.com:3478',
+    username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+    credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+  }
+];
+```
+
+**TURN Server Options**:
+- **Self-hosted**: `coturn` on same Hostinger VPS (free, recommended for VPS deployment)
+- **Managed**: Twilio STUN/TURN API, Metered.ca (pay-as-you-go, ~$0.40/GB)
+
+#### Voice Controls UI States
+
+| State | Icon | Behavior |
+|---|---|---|
+| Unmuted | 🎙️ (green) | Audio streaming to all peers |
+| Muted | 🔇 (red) | Local mic muted, no audio sent |
+| Disconnected | ⚠️ (yellow) | WebRTC connection lost, retry |
+| Not joined | 🎙️ (gray) | Click to join voice |
+
+#### Voice Chat Implementation Plan
+
+**New Files**:
+- `lib/voice/webrtc-manager.ts` — `VoiceManager` class managing all `RTCPeerConnection` instances
+- `lib/voice/use-voice-chat.ts` — React hook wrapping `VoiceManager` with state
+- `components/voice/VoiceChatPanel.tsx` — Voice controls bar (mute, leave, volume)
+- `components/voice/VoiceParticipant.tsx` — Individual player speaking indicator
+- `server/voice-signaling.ts` — Socket.io handlers to relay voice signaling events
+
+**Modified Files**:
+- `components/room/RoomLobby.tsx` — Mount `VoiceChatPanel` on room join
+- `app/game/[gameId]/page.tsx` — Keep `VoiceChatPanel` active throughout game
+- `server/socket.ts` — Add voice signaling event handlers
+- `.env` — Add `TURN_USERNAME`, `TURN_CREDENTIAL`, `NEXT_PUBLIC_TURN_URL`
 
 ---
 
@@ -872,11 +988,16 @@ App
         │   ├── SeatSelectionGrid
         │   ├── PlayerCards
         │   ├── SettingsPanel
+        │   ├── VoiceChatPanel        ← NEW: mounted on room join
+        │   │   ├── VoiceParticipant  ← NEW: per-player speaking indicator
+        │   │   └── MuteButton
         │   └── ReadyButton
         └── GameTablePage
             ├── GameHeader
             │   ├── GameInfo
-            │   └── Timer
+            │   ├── Timer
+            │   └── VoiceChatPanel    ← NEW: persists across game phases
+            │       └── VoiceParticipant
             ├── GameTable
             │   ├── CardTable (SVG layout)
             │   ├── PlayerHand (South)
@@ -1011,6 +1132,11 @@ Pass
 │            │    [Ready]      │                 │
 │            └─────────────────┘                 │
 │                                                 │
+│  ┌─── Voice Chat ──────────────────────────┐  │
+│  │ 🎙️ User2 (speaking)  🔇 You (muted)     │  │
+│  │ [🎙️ Join Voice]           [🔇 Mute]    │  │
+│  └─────────────────────────────────────────┘  │
+│                                                 │
 │  Settings:                                     │
 │  ☑ Bidding System: SAYC                        │
 │  ☑ Boards: 1                                   │
@@ -1024,8 +1150,9 @@ Pass
 ┌────────────────────────────────────────────────┐
 │  Board #1  |  Dealer: South  |  Vuln: None     │
 │  Contract: 4♥ by South       Time: 01:23  ⏱   │
+│  🎙️ User2 ●  🔇 User3  🎙️ User4  [🔇 Mute]   │  ← Voice bar
 ├────────────────────────────────────────────────┤
-│                   North                         │
+│                   North  🎙️                    │  ← speaking indicator
 │              [13 cards face-down]              │
 │                                                 │
 │  West    ┌─────────────────┐           East   │
@@ -1352,7 +1479,7 @@ gzip_types text/plain text/css text/xml text/javascript
 - [ ] Advanced statistics and ELO ratings
 - [ ] Mobile apps (React Native)
 - [ ] Spectator mode
-- [ ] Voice chat integration
+- [x] **Voice chat** — moved to core feature (see Section 5.3)
 
 ### Phase 3 Features
 - [ ] Teaching mode with hints
@@ -1447,8 +1574,18 @@ This design document provides a complete architectural blueprint for BridgeOnlin
 
 - **Scalable**: Serverless architecture on Vercel
 - **Real-time**: Socket.io for instant game updates
+- **Voice-enabled**: WebRTC peer-to-peer audio from room join through entire game session
 - **Secure**: Server-side validation and encrypted game state
 - **User-friendly**: Modern UI with responsive design
 - **Compliant**: ACBL-standard Bridge rules
+
+### Communication Architecture Summary
+
+| Channel | Technology | Purpose |
+|---|---|---|
+| Game state sync | WebSocket (Socket.io) | Bids, cards, room events |
+| Voice signaling | WebSocket (same socket) | WebRTC offer/answer/ICE relay |
+| Voice audio | WebRTC (P2P UDP) | Real-time audio between players |
+| Voice fallback | TURN server (coturn) | Audio relay when P2P blocked by NAT |
 
 Next steps: Review this document, approve the technical approach, and proceed to implementation phase.
