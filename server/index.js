@@ -2,6 +2,7 @@ import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
+import { registerSocketHandlers } from '../lib/socket/register-handlers.js';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0'; // Listen on all network interfaces
@@ -33,113 +34,7 @@ app.prepare().then(() => {
     // This enables API routes (e.g. /api/rooms/[roomId]/start) to emit events
     global.io = io;
 
-    io.on('connection', (socket) => {
-        console.log('Socket connected:', socket.id);
-
-        // Join a specific room
-        socket.on('room:join', (data) => {
-            const { roomId } = data;
-            socket.join(`room-${roomId}`);
-            console.log(`Socket ${socket.id} joined room-${roomId}`);
-
-            // Broadcast to others in the room (not including sender)
-            socket.to(`room-${roomId}`).emit('room:player_joined', {
-                socketId: socket.id,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Leave a room
-        socket.on('room:leave', (data) => {
-            const { roomId } = data;
-            socket.leave(`room-${roomId}`);
-            console.log(`Socket ${socket.id} left room-${roomId}`);
-
-            socket.to(`room-${roomId}`).emit('room:player_left', {
-                socketId: socket.id,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Seat selection - broadcast to others (sender already updated their own UI)
-        socket.on('room:seat_changed', (data) => {
-            const { roomId, userId, seat, username } = data;
-            console.log(`Seat changed in room-${roomId}:`, { userId, seat, username });
-            socket.to(`room-${roomId}`).emit('room:seat_changed', {
-                userId,
-                seat,
-                username,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Ready status toggle - broadcast to others
-        socket.on('room:ready_toggle', (data) => {
-            const { roomId, userId, isReady, username } = data;
-            console.log(`Ready toggle in room-${roomId}:`, { userId, isReady, username });
-            socket.to(`room-${roomId}`).emit('room:player_ready', {
-                userId,
-                isReady,
-                username,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Player left event - broadcast to others
-        socket.on('room:player_left', (data) => {
-            const { roomId, userId, username } = data;
-            console.log(`Player left room-${roomId}:`, { userId, username });
-            socket.to(`room-${roomId}`).emit('room:player_left', {
-                userId,
-                username,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Room settings update
-        socket.on('room:settings_updated', (data) => {
-            const { roomId, settings } = data;
-            io.to(`room-${roomId}`).emit('room:settings_updated', {
-                settings,
-                timestamp: new Date().toISOString(),
-            });
-        });
-
-        // Explicit join for a game session (called once game data loads on the client)
-        // This gives two independent delivery paths: room-* (from lobby) and game-* (from here)
-        socket.on('game:join', ({ gameId, roomId }) => {
-            if (gameId) {
-                socket.join(`game-${gameId}`);
-                console.log(`Socket ${socket.id} joined game-${gameId}`);
-            }
-            if (roomId) {
-                socket.join(`room-${roomId}`);
-                console.log(`Socket ${socket.id} joined room-${roomId}`);
-            }
-        });
-
-        // Game bidding
-        socket.on('game:make_bid', (data) => {
-            const { roomId, bid } = data;
-            io.to(`room-${roomId}`).emit('game:bid_made', {
-                socketId: socket.id,
-                bid,
-            });
-        });
-
-        // Card play
-        socket.on('game:play_card', (data) => {
-            const { roomId, card } = data;
-            io.to(`room-${roomId}`).emit('game:card_played', {
-                socketId: socket.id,
-                card,
-            });
-        });
-
-        socket.on('disconnect', () => {
-            console.log('Socket disconnected:', socket.id);
-        });
-    });
+    registerSocketHandlers(io);
 
     server.listen(port, () => {
         console.log(`> Ready on http://localhost:${port}`);

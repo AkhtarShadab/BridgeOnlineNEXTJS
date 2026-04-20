@@ -1,18 +1,45 @@
-# Testing Guide — BridgeOnline (Layer 1: Unit Tests)
+# Testing Guide — BridgeOnline
 
-This guide shows how to run the unit tests locally, read the output, and understand what each test is asserting.
+This guide covers all 5 testing layers: unit tests, DB integration, Socket.io integration, E2E browser flows, and WebRTC signaling.
+
+---
+
+## Layer Summary
+
+| Layer | Command | Needs | Tests |
+|---|---|---|---|
+| **1 — Unit** | `npm test` | Nothing | 123 |
+| **2 — DB** | `npm run test:db` | Docker test DB | ~35 |
+| **3 — Socket.io** | `npm run test:socket` | Nothing | 20 |
+| **4 — E2E** | `npm run test:e2e` | App + Playwright system deps | 20 |
+| **5 — Voice** | included in `test:e2e` | App + Playwright system deps | 3 |
 
 ---
 
 ## Prerequisites
 
-Node.js 20+ and dependencies installed:
-
 ```bash
 npm install
 ```
 
-No database, no server, no environment variables needed — all Layer 1 tests are pure in-memory logic.
+### Layer 1 + 3 — No external dependencies
+Pure in-memory logic and standalone Socket.io server. No database, no browser.
+
+### Layer 2 — Docker PostgreSQL
+```bash
+# Add yourself to the docker group (one-time):
+sudo usermod -aG docker $USER   # then log out/in
+
+# Start test DB and push schema:
+npm run test:db:start
+```
+
+### Layer 4 + 5 — Playwright system libraries
+```bash
+# Install Playwright browser system dependencies (one-time):
+sudo npx playwright install-deps
+npx playwright install chromium
+```
 
 ---
 
@@ -332,6 +359,74 @@ This is noted in `playing.test.ts` with a comment — the test currently asserts
 
 ---
 
-## What's Coming Next (Layer 2)
+---
 
-Layer 2 tests will require a running PostgreSQL instance. Setup instructions will be in `docs/db-testing-guide.md` once Layer 2 is implemented.
+## Layer 2 — DB Integration Tests
+
+**Setup:**
+```bash
+npm run test:db:start          # starts postgres:16-alpine on port 5433
+npm run test:db                # globalSetup runs prisma db push, then tests
+npm run test:db:stop           # stop container when done
+```
+
+**What's tested:**
+- User creation, uniqueness constraints, bcrypt validation
+- Friendship requests and status transitions
+- Room creation, seat uniqueness, ready toggle, status transitions
+- Game record creation, move sequencing, result persistence
+- Hand isolation (each player only gets 13 cards, no overlaps)
+
+---
+
+## Layer 3 — Socket.io Integration Tests
+
+```bash
+npm run test:socket
+```
+
+**What's tested (20 tests):**
+- `room:join` — other members notified, sender not echoed
+- `room:leave` — remaining members notified
+- `room:seat_changed` — broadcast to others, not sender
+- `room:ready_toggle` — ready status relay
+- `room:settings_updated` — broadcast to ALL including sender
+- `game:join` — subscribe to both room and game channels
+- `game:make_bid` — broadcast to all, includes sender socketId
+- `game:play_card` — 4-player sequence test
+- `voice:offer/answer/ice_candidate` — full signaling relay sequence
+- `voice:toggle_mute`, `voice:speaking`, `voice:leave`
+
+---
+
+## Layer 4 — E2E Browser Tests
+
+```bash
+# First time only:
+sudo npx playwright install-deps
+npx playwright install chromium
+
+# Then run (starts dev server automatically):
+npm run test:e2e
+npm run test:e2e:headed   # watch in browser
+npm run test:e2e:ui       # interactive UI
+```
+
+**What's tested (17 tests):**
+- Auth: register → dashboard, duplicate email error, wrong password error, auth guard
+- Room lifecycle: create room, invite code display, join by code, seat display
+- Seat selection persistence after reload
+- Room API state after reconnect
+- Socket.io reconnect after network interruption (via CDP offline mode)
+- Full 4-player join flow
+
+---
+
+## Layer 5 — WebRTC Signaling E2E
+
+Included in `npm run test:e2e` (3 tests in `voice-signaling.spec.ts`).
+
+**What's tested:**
+- Full offer → answer → ICE candidate relay via live Socket.io server
+- Mute state relay between 2 browsers in same room
+- `voice:user_left` cleanup when player navigates away

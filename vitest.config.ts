@@ -5,10 +5,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    include: ['__tests__/unit/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       include: ['lib/game/**/*.ts'],
-      exclude: ['lib/game/gameEngine.ts'], // has DB import, covered via integration
+      exclude: ['lib/game/gameEngine.ts'],
     },
   },
   resolve: {
