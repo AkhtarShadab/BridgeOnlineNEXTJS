@@ -1,54 +1,26 @@
-# BridgeOnline - Comprehensive Design Document
+# BridgeOnline — Design Document
 
-## Executive Summary
+## 1. Overview
 
-BridgeOnline is a web-based, real-time multiplayer Bridge card game built on **Next.js 14/15** using the **App Router**. The application enables registered users to play Contract Bridge online with friends through private game rooms, supporting authentic ACBL-compliant gameplay with customizable bidding systems and game configurations.
+Web-based real-time multiplayer Contract Bridge (ACBL rules) for 4 players. Built on Next.js 14 App Router with Socket.io for real-time sync and WebRTC for peer-to-peer voice.
 
----
+### Tech Stack
 
-## 1. Project Overview
-
-### 1.1 Core Objectives
-- Provide an authentic Contract Bridge experience following **ACBL (American Contract Bridge League)** rules
-- Enable real-time multiplayer gameplay for 4 players
-- Support social features including friend requests and private game rooms
-- Offer flexible bidding systems (Standard American, SAYC)
-- Deliver a responsive, modern UI/UX experience
-
-### 1.2 Technology Stack
-
-#### Frontend
-- **Framework**: Next.js 14/15 (App Router, Server Components, Server Actions)
-- **Language**: JavaScript
-- **Styling**: Tailwind CSS with custom design system
-- **State Management**: Zustand or React Context + hooks
-- **Real-time**: Socket.io Client
-- **Voice Chat**: WebRTC (`RTCPeerConnection`, `getUserMedia`) — peer-to-peer audio
-- **UI Components**: shadcn/ui or Radix UI primitives
-- **Forms**: React Hook Form + Zod validation
-
-#### Backend
-- **Runtime**: Node.js 18+
-- **API**: Next.js API Routes (App Router format)
-- **Real-time**: Socket.io Server (game data + WebRTC signaling relay)
-- **Voice Relay**: STUN server (Google free) + TURN server (coturn, self-hosted) for NAT traversal
-- **Authentication**: NextAuth.js v5 (Auth.js) or Clerk
-- **Database**: PostgreSQL with Prisma ORM
-- **Caching**: Redis (for session management and game state)
-- **File Storage**: Vercel Blob or AWS S3 (for avatars)
-
-#### Infrastructure
-- **Hosting**: Hostinger (Frontend with custom domain) or Vercel
-- **Backend/API**: Vercel Serverless Functions or Node.js server on Hostinger VPS
-- **Database Hosting**: Supabase, Railway, or Neon
-- **Redis Hosting**: Upstash Redis
-- **CDN**: Hostinger CDN or Cloudflare
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 14 (App Router), Tailwind CSS, Zustand |
+| Real-time | Socket.io (game + signaling) |
+| Voice | WebRTC (`RTCPeerConnection`) via Socket.io signaling |
+| Auth | NextAuth.js v5 |
+| Database | PostgreSQL + Prisma ORM |
+| Cache | Redis (game state + sessions) |
+| Hosting | Hostinger VPS or Vercel + Railway |
 
 ---
 
-## 2. Database Schema Design
+## 2. Database Schema
 
-### 2.1 Entity Relationship Overview
+### Entity Relationships
 
 ```mermaid
 erDiagram
@@ -59,255 +31,27 @@ erDiagram
     game_rooms ||--o{ games : "hosts"
     games ||--o{ game_moves : "records"
     games ||--o{ game_results : "produces"
-    games ||--o{ game_players : "involves"
-
-    users {
-        uuid id PK
-        string email UK
-        string username UK
-        string password_hash
-        string avatar_url
-        timestamp created_at
-        timestamp last_login
-        json stats
-    }
-
-    friendships {
-        uuid id PK
-        uuid requester_id FK
-        uuid addressee_id FK
-        enum status
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    game_rooms {
-        uuid id PK
-        string name
-        string invite_code UK
-        uuid creator_id FK
-        json settings
-        enum status
-        timestamp created_at
-        timestamp expires_at
-    }
-
-    game_players {
-        uuid id PK
-        uuid game_room_id FK
-        uuid game_id FK
-        uuid user_id FK
-        enum seat
-        boolean is_ready
-        timestamp joined_at
-    }
-
-    games {
-        uuid id PK
-        uuid game_room_id FK
-        enum phase
-        json game_state
-        json deck
-        uuid current_player_id FK
-        uuid dealer_id FK
-        uuid declarer_id FK
-        integer board_number
-        timestamp started_at
-        timestamp ended_at
-    }
-
-    game_moves {
-        uuid id PK
-        uuid game_id FK
-        uuid player_id FK
-        enum move_type
-        json move_data
-        integer sequence_number
-        timestamp created_at
-    }
-
-    game_results {
-        uuid id PK
-        uuid game_id FK
-        uuid winning_team
-        integer contract_tricks
-        string contract_suit
-        integer tricks_won
-        integer score_ns
-        integer score_ew
-        json detailed_scoring
-        timestamp created_at
-    }
 ```
 
-### 2.2 Detailed Schema Definitions
+### Tables
 
-#### Users Table
-```sql
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL, -- If using NextAuth credentials
-    avatar_url TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    last_login TIMESTAMP,
-    stats JSONB DEFAULT '{"games_played": 0, "games_won": 0, "total_score": 0}'::jsonb,
-    
-    CONSTRAINT email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$')
-);
+**users** — `id`, `email` (unique), `username` (unique), `password_hash`, `avatar_url`, `stats` (JSONB: games_played, games_won, total_score), `created_at`, `last_login`
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_username ON users(username);
-```
+**friendships** — `id`, `requester_id`, `addressee_id`, `status` (pending/accepted/rejected/blocked), `created_at`
 
-#### Friendships Table
-```sql
-CREATE TYPE friendship_status AS ENUM ('pending', 'accepted', 'rejected', 'blocked');
+**game_rooms** — `id`, `name`, `invite_code` (unique, 6-10 chars), `creator_id`, `settings` (JSONB: bidding_system, num_boards, timer_enabled, timer_duration), `status` (waiting/ready/in_progress/completed/abandoned), `expires_at` (+24h)
 
-CREATE TABLE friendships (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    addressee_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    status friendship_status DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT no_self_friendship CHECK (requester_id != addressee_id),
-    CONSTRAINT unique_friendship UNIQUE (requester_id, addressee_id)
-);
+**game_players** — `id`, `game_room_id`, `game_id`, `user_id`, `seat` (north/south/east/west), `is_ready`, `joined_at` — unique constraints on (room, seat) and (room, user)
 
-CREATE INDEX idx_friendships_requester ON friendships(requester_id);
-CREATE INDEX idx_friendships_addressee ON friendships(addressee_id);
-CREATE INDEX idx_friendships_status ON friendships(status);
-```
+**games** — `id`, `game_room_id`, `phase` (initializing/bidding/playing/scoring/completed), `game_state` (JSONB), `current_player_id`, `dealer_id`, `declarer_id`, `board_number`, `started_at`, `ended_at`
 
-#### Game Rooms Table
-```sql
-CREATE TYPE room_status AS ENUM ('waiting', 'ready', 'in_progress', 'completed', 'abandoned');
+**game_moves** — `id`, `game_id`, `player_id`, `move_type` (bid/pass/double/redouble/play_card), `move_data` (JSONB), `sequence_number` (unique per game), `created_at`
 
-CREATE TABLE game_rooms (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL,
-    invite_code VARCHAR(10) UNIQUE NOT NULL,
-    creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    settings JSONB DEFAULT '{
-        "bidding_system": "SAYC",
-        "num_boards": 1,
-        "timer_enabled": true,
-        "timer_duration": 90,
-        "vulnerability_rotation": "standard"
-    }'::jsonb,
-    status room_status DEFAULT 'waiting',
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '24 hours',
-    
-    CONSTRAINT invite_code_format CHECK (invite_code ~ '^[A-Z0-9]{6,10}$')
-);
-
-CREATE INDEX idx_game_rooms_invite_code ON game_rooms(invite_code);
-CREATE INDEX idx_game_rooms_creator ON game_rooms(creator_id);
-CREATE INDEX idx_game_rooms_status ON game_rooms(status);
-```
-
-#### Game Players Table
-```sql
-CREATE TYPE seat_position AS ENUM ('north', 'south', 'east', 'west');
-
-CREATE TABLE game_players (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_room_id UUID NOT NULL REFERENCES game_rooms(id) ON DELETE CASCADE,
-    game_id UUID REFERENCES games(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    seat seat_position NOT NULL,
-    is_ready BOOLEAN DEFAULT FALSE,
-    joined_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT unique_seat_per_room UNIQUE (game_room_id, seat),
-    CONSTRAINT unique_user_per_room UNIQUE (game_room_id, user_id)
-);
-
-CREATE INDEX idx_game_players_room ON game_players(game_room_id);
-CREATE INDEX idx_game_players_game ON game_players(game_id);
-CREATE INDEX idx_game_players_user ON game_players(user_id);
-```
-
-#### Games Table
-```sql
-CREATE TYPE game_phase AS ENUM ('initializing', 'bidding', 'playing', 'scoring', 'completed');
-
-CREATE TABLE games (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_room_id UUID NOT NULL REFERENCES game_rooms(id) ON DELETE CASCADE,
-    phase game_phase DEFAULT 'initializing',
-    game_state JSONB DEFAULT '{
-        "hands": {},
-        "current_bid": null,
-        "bid_history": [],
-        "tricks": [],
-        "current_trick": [],
-        "trump_suit": null,
-        "contract": null
-    }'::jsonb,
-    deck JSONB, -- Encrypted/hashed card distribution
-    current_player_id UUID REFERENCES users(id),
-    dealer_id UUID NOT NULL REFERENCES users(id),
-    declarer_id UUID REFERENCES users(id),
-    board_number INTEGER DEFAULT 1,
-    started_at TIMESTAMP DEFAULT NOW(),
-    ended_at TIMESTAMP,
-    
-    CONSTRAINT valid_board_number CHECK (board_number > 0)
-);
-
-CREATE INDEX idx_games_room ON games(game_room_id);
-CREATE INDEX idx_games_phase ON games(phase);
-CREATE INDEX idx_games_current_player ON games(current_player_id);
-```
-
-#### Game Moves Table
-```sql
-CREATE TYPE move_type AS ENUM ('bid', 'pass', 'double', 'redouble', 'play_card');
-
-CREATE TABLE game_moves (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    player_id UUID NOT NULL REFERENCES users(id),
-    move_type move_type NOT NULL,
-    move_data JSONB NOT NULL, -- e.g., {"bid": "1H"} or {"card": "AS"}
-    sequence_number INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT unique_sequence UNIQUE (game_id, sequence_number)
-);
-
-CREATE INDEX idx_game_moves_game ON game_moves(game_id);
-CREATE INDEX idx_game_moves_sequence ON game_moves(game_id, sequence_number);
-```
-
-#### Game Results Table
-```sql
-CREATE TABLE game_results (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id UUID UNIQUE NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    winning_team VARCHAR(2) CHECK (winning_team IN ('NS', 'EW')),
-    contract_tricks INTEGER,
-    contract_suit VARCHAR(2), -- 'C', 'D', 'H', 'S', 'NT'
-    tricks_won INTEGER,
-    score_ns INTEGER DEFAULT 0,
-    score_ew INTEGER DEFAULT 0,
-    detailed_scoring JSONB, -- Breakdown of points
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_game_results_game ON game_results(game_id);
-```
+**game_results** — `id`, `game_id` (unique), `winning_team` (NS/EW), `contract_tricks`, `contract_suit`, `tricks_won`, `score_ns`, `score_ew`, `detailed_scoring` (JSONB)
 
 ---
 
 ## 3. Game Engine State Machine
-
-### 3.1 State Diagram
 
 ```mermaid
 stateDiagram-v2
@@ -315,1488 +59,302 @@ stateDiagram-v2
     RoomWaiting --> RoomReady: All 4 Players Joined
     RoomReady --> Initializing: All Players Ready
     Initializing --> Bidding: Cards Dealt
-    
     Bidding --> Bidding: Bid/Pass/Double/Redouble
     Bidding --> Playing: 3 Consecutive Passes
-    
     Playing --> Playing: Card Played
     Playing --> Scoring: 13 Tricks Completed
-    
     Scoring --> Completed: Score Calculated
-    Scoring --> Initializing: Next Board (if multiple boards)
-    
+    Scoring --> Initializing: Next Board
     Completed --> [*]: Game Over
-    
-    note right of RoomWaiting
-        Status: waiting
-        Players: 0-3
-    end note
-    
-    note right of Bidding
-        Sequential turns
-        Contract established
-    end note
-    
-    note right of Playing
-        Trick-taking phase
-        Follow suit rules
-    end note
 ```
 
-### 3.2 State Definitions
+### State Definitions
 
-#### State: Room Waiting
-- **Entry Conditions**: Room created by user
-- **Valid Actions**:
-  - Join room (via invite code)
-  - Select seat (North/South/East/West)
-  - Mark as ready
-  - Leave room
-- **Exit Conditions**: All 4 seats filled → Room Ready
+| State | Entry | Valid Actions | Exit |
+|---|---|---|---|
+| **RoomWaiting** | Room created | Join, select seat, mark ready, leave | All 4 seats filled |
+| **RoomReady** | 4 players joined | Ready/unready, configure settings (creator), leave | All ready |
+| **Initializing** | All ready | — (server deals cards, sets dealer + vulnerability) | Auto → Bidding |
+| **Bidding** | Cards dealt | Bid (level+suit), Pass, Double, Redouble | 3 consecutive passes |
+| **Playing** | Contract established | Play card (must follow suit if possible) | 13 tricks completed |
+| **Scoring** | 13 tricks done | — (server calculates score) | More boards → Init; else → Completed |
+| **Completed** | All boards done | View scoreboard, exit, new game | — |
 
-#### State: Room Ready
-- **Entry Conditions**: 4 players joined
-- **Valid Actions**:
-  - Mark ready/unready
-  - Leave room (triggers back to Waiting)
-  - Configure settings (creator only)
-- **Exit Conditions**: All players ready → Initializing
+### Bidding Rules
+- Bid must be higher than previous (suit hierarchy: ♣ < ♦ < ♥ < ♠ < NT)
+- Double valid only on opponent's bid; Redouble only on own team's doubled bid
+- Declarer = first player from declaring side to bid the contract suit
 
-#### State: Initializing
-- **Entry Conditions**: All players ready
-- **Server Actions**:
-  1. Generate shuffled 52-card deck
-  2. Distribute 13 cards to each player
-  3. Determine dealer (rotation based on board number)
-  4. Set vulnerability based on board number
-  5. Initialize game state
-- **Exit Conditions**: Automatically → Bidding
-
-#### State: Bidding
-- **Entry Conditions**: Cards dealt
-- **Turn Order**: Clockwise from dealer
-- **Valid Actions**:
-  - Make bid (level 1-7, suit C/D/H/S/NT)
-  - Pass
-  - Double (if opponent bid)
-  - Redouble (if partner's bid was doubled)
-- **Validation Rules**:
-  - Bid must be higher than previous bid
-  - Suit hierarchy: ♣ < ♦ < ♥ < ♠ < NT
-  - Double only valid on opponent's bid
-  - Redouble only valid on own team's doubled bid
-- **Exit Conditions**: 3 consecutive passes → Playing
-- **Contract Determination**:
-  - Last bid becomes contract
-  - Player who first bid contract suit becomes declarer
-  - Partner becomes dummy
-
-#### State: Playing
-- **Entry Conditions**: Contract established
-- **Turn Order**: 
-  1. Player to left of declarer leads first trick
-  2. Winner of trick leads next trick
-- **Valid Actions**:
-  - Play card from hand
-- **Validation Rules**:
-  - Must follow suit if possible
-  - If cannot follow suit, can play any card
-- **Trick Resolution**:
-  - Highest trump wins (if trump played)
-  - Otherwise, highest card of led suit wins
-- **Dummy Behavior**:
-  - Hand revealed after opening lead
-  - Declarer plays for dummy
-- **Exit Conditions**: All 13 tricks played → Scoring
-
-#### State: Scoring
-- **Entry Conditions**: 13 tricks completed
-- **Server Actions**:
-  1. Count tricks won by declaring team
-  2. Calculate contract score
-  3. Apply vulnerability bonus/penalty
-  4. Check for overtricks/undertricks
-  5. Apply game/slam bonuses
-  6. Record results
-- **Exit Conditions**: 
-  - If more boards remain → Initializing
-  - Otherwise → Completed
-
-#### State: Completed
-- **Entry Conditions**: All boards played
-- **Server Actions**:
-  - Finalize game statistics
-  - Update user stats
-  - Archive game state
-- **Valid Actions**:
-  - View final scoreboard
-  - Exit to lobby
-  - Create new game
-
-### 3.3 Scoring Algorithm (ACBL Duplicate Bridge)
-
-```javascript
-/**
- * Calculate score for a Bridge contract
- * @param {Object} contract - The contract details
- * @param {number} contract.level - Contract level (1-7)
- * @param {string} contract.suit - Contract suit ('C', 'D', 'H', 'S', or 'NT')
- * @param {boolean} contract.doubled - Whether contract was doubled
- * @param {boolean} contract.redoubled - Whether contract was redoubled
- * @param {number} tricksWon - Number of tricks won by declarer
- * @param {string} declarer - Declaring team ('NS' or 'EW')
- * @param {Object} vulnerability - Vulnerability status
- * @param {boolean} vulnerability.NS - NS vulnerable
- * @param {boolean} vulnerability.EW - EW vulnerable
- * @returns {Object} Score for each team { scoreNS, scoreEW }
- */
-function calculateScore(contract, tricksWon, declarer, vulnerability) {
-  const requiredTricks = 6 + contract.level;
-  const isVulnerable = vulnerability[declarer];
-  const overtricks = tricksWon - requiredTricks;
-  const undertricks = requiredTricks - tricksWon;
-  
-  let score = 0;
-  
-  if (overtricks >= 0) {
-    // Contract made
-    // 1. Trick score
-    const basePoints = contract.suit === 'NT' 
-      ? 40 + (contract.level - 1) * 30
-      : (contract.suit === 'C' || contract.suit === 'D') 
-        ? contract.level * 20 
-        : contract.level * 30;
-    
-    score += contract.doubled ? basePoints * 2 : 
-             contract.redoubled ? basePoints * 4 : 
-             basePoints;
-    
-    // 2. Overtrick bonus
-    if (overtricks > 0) {
-      if (contract.doubled) {
-        score += overtricks * (isVulnerable ? 200 : 100);
-      } else if (contract.redoubled) {
-        score += overtricks * (isVulnerable ? 400 : 200);
-      } else {
-        const overtrickValue = (contract.suit === 'C' || contract.suit === 'D') ? 20 : 30;
-        score += overtricks * overtrickValue;
-      }
-    }
-    
-    // 3. Game bonus
-    if (score >= 100) {
-      score += isVulnerable ? 500 : 300;
-    } else {
-      score += 50; // Partscore bonus
-    }
-    
-    // 4. Slam bonus
-    if (contract.level === 6) {
-      score += isVulnerable ? 750 : 500; // Small slam
-    } else if (contract.level === 7) {
-      score += isVulnerable ? 1500 : 1000; // Grand slam
-    }
-    
-    // 5. Double/Redouble bonus
-    if (contract.doubled) score += 50;
-    if (contract.redoubled) score += 100;
-    
-  } else {
-    // Contract failed (undertricks)
-    if (contract.doubled) {
-      for (let i = 0; i < Math.abs(undertricks); i++) {
-        if (i === 0) score -= isVulnerable ? 200 : 100;
-        else if (i <= 2) score -= isVulnerable ? 300 : 200;
-        else score -= isVulnerable ? 300 : 300;
-      }
-      if (contract.redoubled) score *= 2;
-    } else {
-      score -= Math.abs(undertricks) * (isVulnerable ? 100 : 50);
-    }
-  }
-  
-  return declarer === 'NS' 
-    ? { scoreNS: score, scoreEW: 0 }
-    : { scoreNS: 0, scoreEW: score };
-}
-```
+### Scoring (ACBL Duplicate)
+- **Trick score**: Minors (♣♦) = 20/trick, Majors (♥♠) = 30/trick, NT = 40 first + 30 each
+- **Doubled/Redoubled**: multiply trick score ×2 / ×4
+- **Game bonus**: 300 (not vul) / 500 (vul) when trick score ≥ 100; else 50 partscore
+- **Slam bonus**: Small slam 500/750; Grand slam 1000/1500 (not vul / vul)
+- **Overtricks**: face value undoubled; 100/200 per trick doubled (not vul/vul)
+- **Undertricks**: 50/100 per trick undoubled (not vul/vul); scaled penalties when doubled
 
 ---
 
-## 4. API Routes & Endpoints
+## 4. API Routes
 
-### 4.1 Authentication Routes
+### Auth
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register — body: `{ email, username, password }` |
+| POST | `/api/auth/login` | Login — returns JWT + user profile |
 
-#### `POST /api/auth/register`
-**Description**: Register a new user
+### Users & Friends
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/users/search?q=` | Search users by username |
+| POST | `/api/friends/request` | Send friend request — body: `{ addresseeId }` |
+| PATCH | `/api/friends/:id` | Accept/reject — body: `{ action: "accept" \| "reject" }` |
+| GET | `/api/friends` | Get friends list + pending requests |
 
-**Request Body**:
-```javascript
-{
-  email: "user@example.com",
-  username: "player1",
-  password: "securepassword"
-}
-```
+### Rooms
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/rooms/create` | Create room — body: `{ name, settings }` — returns `{ roomId, inviteCode }` |
+| POST | `/api/rooms/join` | Join by invite code — body: `{ inviteCode }` |
+| GET | `/api/rooms/:id` | Room details with player list and status |
+| PATCH | `/api/rooms/:id/seat` | Select seat — body: `{ seat }` |
+| PATCH | `/api/rooms/:id/ready` | Toggle ready — body: `{ isReady }` |
 
-**Response**:
-```javascript
-{
-  success: true,
-  user: {
-    id: "uuid-string",
-    email: "user@example.com",
-    username: "player1"
-  },
-  error: null
-}
-```
+### Game Actions
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/games/:id/bid` | Make bid — body: `{ action, bid: { level, suit } }` |
+| POST | `/api/games/:id/play` | Play card — body: `{ card }` (e.g. `"AS"`) |
+| GET | `/api/games/:id/state` | Current game state (hands filtered per player) |
 
-#### `POST /api/auth/login`
-**Description**: Authenticate user (if using NextAuth credentials)
-
-**Request Body**:
-```javascript
-{
-  email: "user@example.com",
-  password: "securepassword"
-}
-```
-
-**Response**:
-```javascript
-{
-  success: true,
-  token: "jwt-token-here",
-  user: { /* UserProfile object */ },
-  error: null
-}
-```
-
-### 4.2 User & Social Routes
-
-#### `GET /api/users/search?q={query}`
-**Description**: Search for users by username
-
-**Response**:
-```javascript
-{
-  users: [
-    {
-      id: "uuid-1",
-      username: "player1",
-      avatar_url: "https://..."
-    }
-  ]
-}
-```
-
-#### `POST /api/friends/request`
-**Description**: Send friend request
-
-**Request Body**:
-```javascript
-{
-  addresseeId: "uuid-of-friend"
-}
-```
-
-**Response**:
-```javascript
-{
-  success: true,
-  friendshipId: "friendship-uuid",
-  error: null
-}
-```
-
-#### `PATCH /api/friends/{friendshipId}`
-**Description**: Accept/reject friend request
-
-**Request Body**:
-```javascript
-{
-  action: "accept" // or "reject"
-}
-```
-
-#### `GET /api/friends`
-**Description**: Get user's friends and pending requests
-
-**Response**:
-```javascript
-{
-  friends: [/* array of UserProfile objects */],
-  pendingReceived: [/* array of FriendRequest objects */],
-  pendingSent: [/* array of FriendRequest objects */]
-}
-```
-
-### 4.3 Game Room Routes
-
-#### `POST /api/rooms/create`
-**Description**: Create a new game room
-
-**Request Body**:
-```javascript
-{
-  name: "Friday Night Bridge",
-  settings: {
-    biddingSystem: "SAYC", // or "StandardAmerican"
-    numBoards: 1,
-    timerEnabled: true,
-    timerDuration: 90 // seconds
-  }
-}
-```
-
-**Response**:
-```javascript
-{
-  roomId: "room-uuid",
-  inviteCode: "ABCD1234"
-}
-```
-
-#### `POST /api/rooms/join`
-**Description**: Join a room via invite code
-
-**Request Body**:
-```javascript
-{
-  inviteCode: "ABCD1234"
-}
-```
-
-**Response**:
-```javascript
-{
-  success: true,
-  room: { /* GameRoom object */ },
-  error: null
-}
-```
-
-#### `GET /api/rooms/{roomId}`
-**Description**: Get room details
-
-**Response**:
-```javascript
-{
-  id: "room-uuid",
-  name: "Friday Night Bridge",
-  inviteCode: "ABCD1234",
-  settings: { /* RoomSettings object */ },
-  players: [
-    {
-      userId: "user-uuid",
-      username: "player1",
-      seat: "north", // "north", "south", "east", or "west"
-      isReady: true
-    }
-  ],
-  status: "waiting" // "waiting", "ready", "in_progress", or "completed"
-}
-```
-
-#### `PATCH /api/rooms/{roomId}/seat`
-**Description**: Select or change seat
-
-**Request Body**:
-```javascript
-{
-  seat: "north" // "north", "south", "east", or "west"
-}
-```
-
-#### `PATCH /api/rooms/{roomId}/ready`
-**Description**: Toggle ready status
-
-**Request Body**:
-```javascript
-{
-  isReady: true
-}
-```
-
-### 4.4 Game Action Routes
-
-#### `POST /api/games/{gameId}/bid`
-**Description**: Make a bid during auction
-
-**Request Body**:
-```javascript
-{
-  action: "bid", // "bid", "pass", "double", or "redouble"
-  bid: {
-    level: 1, // 1-7
-    suit: "H" // "C", "D", "H", "S", or "NT"
-  }
-}
-```
-
-**Response**:
-```javascript
-{
-  success: true,
-  gameState: { /* GameState object */ },
-  error: null
-}
-```
-
-#### `POST /api/games/{gameId}/play`
-**Description**: Play a card
-
-**Request Body**:
-```javascript
-{
-  card: "AS" // e.g., "AS" (Ace of Spades)
-}
-```
-
-**Response**:
-```javascript
-{
-  success: true,
-  gameState: { /* GameState object */ },
-  error: null
-}
-```
-
-#### `GET /api/games/{gameId}/state`
-**Description**: Get current game state
-
-**Response**:
-```javascript
-{
-  gameId: "game-uuid",
-  phase: "playing", // GamePhase
-  currentPlayer: "user-uuid",
-  hand: ["AS", "KH", "QD"], // Only player's own cards
-  bidHistory: [/* array of Bid objects */],
-  currentTrick: ["7H", "QH"],
-  tricksWon: { NS: 3, EW: 2 },
-  contract: { /* Contract object */ },
-  dummyHand: ["2C", "3C"] // Only visible after first card played
-}
-```
+All game actions return `{ success, gameState, error }`. Player hands are server-filtered — each client only receives their own cards.
 
 ---
 
-## 5. Real-Time WebSocket Events
+## 5. Real-Time Events (Socket.io)
 
-### 5.1 Socket.io Event Schema
+### Server → Client
 
-**Server → Client Events**
-
-| Event Name | Payload | Description |
-|------------|---------|-------------|
-| `room:player_joined` | `{ userId, username, seat }` | Player joined room |
-| `room:player_left` | `{ userId, seat }` | Player left room |
-| `room:player_ready` | `{ userId, isReady }` | Player ready status changed |
-| `room:settings_updated` | `{ settings }` | Room settings changed |
-| `game:started` | `{ gameId, dealer, hands }` | Game initialized |
-| `game:bid_made` | `{ playerId, bid, nextPlayer }` | Bid was made |
-| `game:contract_established` | `{ contract, declarer, dummy }` | Auction ended |
+| Event | Payload | Trigger |
+|---|---|---|
+| `room:player_joined` | `{ userId, username, seat }` | Player joins room |
+| `room:player_left` | `{ userId, seat }` | Player leaves |
+| `room:player_ready` | `{ userId, isReady }` | Ready status changes |
+| `game:started` | `{ gameId, dealer, hands }` | Game initializes |
+| `game:bid_made` | `{ playerId, bid, nextPlayer }` | Bid placed |
+| `game:contract_established` | `{ contract, declarer, dummy }` | Auction ends |
 | `game:card_played` | `{ playerId, card, trick }` | Card played |
-| `game:trick_completed` | `{ winner, tricksWon }` | Trick completed |
-| `game:dummy_revealed` | `{ dummyHand }` | Dummy's hand shown |
-| `game:phase_changed` | `{ phase, gameState }` | Game phase transition |
-| `game:completed` | `{ results, scores }` | Game ended |
-| `timer:tick` | `{ timeRemaining }` | Timer countdown |
-| `error` | `{ message, code }` | Error occurred |
+| `game:trick_completed` | `{ winner, tricksWon }` | Trick resolved |
+| `game:dummy_revealed` | `{ dummyHand }` | Opening lead played |
+| `game:phase_changed` | `{ phase, gameState }` | Phase transition |
+| `game:completed` | `{ results, scores }` | Game ends |
+| `timer:tick` | `{ timeRemaining }` | Countdown tick |
+| `error` | `{ message, code }` | Error |
 
-**Client → Server Events**
+### Client → Server
 
-| Event Name | Payload | Description |
-|------------|---------|-------------|
-| `room:join` | `{ inviteCode }` | Join room |
-| `room:select_seat` | `{ seat }` | Choose seat |
-| `room:toggle_ready` | `{ }` | Ready/unready |
-| `game:make_bid` | `{ action, bid }` | Bid action |
-| `game:play_card` | `{ card }` | Play card |
-| `chat:message` | `{ message }` | Send chat message |
-| `voice:offer` | `{ targetUserId, sdp }` | WebRTC offer (voice signaling) |
-| `voice:answer` | `{ targetUserId, sdp }` | WebRTC answer (voice signaling) |
-| `voice:ice_candidate` | `{ targetUserId, candidate }` | ICE candidate exchange |
-| `voice:toggle_mute` | `{ muted }` | Broadcast own mute state |
-| `voice:leave` | `{ }` | Leave voice session |
+| Event | Payload |
+|---|---|
+| `room:join` | `{ inviteCode }` |
+| `room:select_seat` | `{ seat }` |
+| `room:toggle_ready` | `{}` |
+| `game:make_bid` | `{ action, bid }` |
+| `game:play_card` | `{ card }` |
+| `voice:offer` | `{ targetUserId, sdp }` |
+| `voice:answer` | `{ targetUserId, sdp }` |
+| `voice:ice_candidate` | `{ targetUserId, candidate }` |
+| `voice:toggle_mute` | `{ muted }` |
 
-**Server → Client Events (additional for voice)**
-
-| Event Name | Payload | Description |
-|------------|---------|-------------|
-| `voice:offer` | `{ fromUserId, sdp }` | Forward WebRTC offer to peer |
-| `voice:answer` | `{ fromUserId, sdp }` | Forward WebRTC answer to peer |
-| `voice:ice_candidate` | `{ fromUserId, candidate }` | Forward ICE candidate to peer |
-| `voice:user_muted` | `{ userId, muted }` | Peer toggled mute |
-| `voice:user_left` | `{ userId }` | Peer left voice |
-
-### 5.2 Socket Connection Flow
-
-```javascript
-// Client-side connection
-import { io } from 'socket.io-client';
-
-const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL, {
-  auth: {
-    token: session.user.token
-  }
-});
-
-// Join room
-socket.emit('room:join', { inviteCode: 'ABC123' });
-
-// Listen for events
-socket.on('game:bid_made', (data) => {
-  updateGameState(data);
-});
-
-// Make a bid
-socket.emit('game:make_bid', {
-  action: 'bid',
-  bid: { level: 1, suit: 'H' }
-});
-```
+Voice signaling events are mirrored server → client with `fromUserId` replacing `targetUserId`.
 
 ---
 
-### 5.3 Voice Chat Architecture (WebRTC)
+## 6. Voice Chat (WebRTC)
 
-> **Why WebRTC for voice, not WebSocket?**
-> Voice audio must travel peer-to-peer at low latency. WebSocket only handles text/binary data through a server, adding ~100–300ms extra delay. WebRTC uses UDP directly between browsers, achieving sub-50ms voice latency. The existing WebSocket connection is **reused** only for WebRTC signaling (exchanging SDP offers/answers and ICE candidates).
+Voice uses WebRTC P2P audio (sub-50ms latency) with Socket.io as the signaling relay. WebSocket carries only SDP offers/answers and ICE candidates — audio never touches the server unless TURN is needed.
 
-#### Architecture Overview
+### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   BridgeOnline Server                   │
-│  Socket.io (game events AND voice signaling relay)      │
-└───────┬──────────────────────────────────────┬──────────┘
-        │ WebSocket (signaling only)            │
-   ┌────┴────┐  WebRTC Audio (P2P)   ┌─────────┴────┐
-   │ Player A│◄──────────────────────│   Player B   │
-   └────┬────┘                       └──────────────┘
-        │ WebRTC Audio (P2P)               ▲
-   ┌────┴────┐  WebRTC Audio (P2P)   ┌────┴──────────┐
-   │ Player C│◄──────────────────────│   Player D   │
-   └─────────┘                       └──────────────┘
-
-   [If NAT blocks P2P → audio relayed via TURN server]
+         BridgeOnline Server
+     Socket.io (signaling relay only)
+          │                 │
+    Player A ◄─── WebRTC ───► Player B
+          │                 │
+    Player C ◄─── WebRTC ───► Player D
+    [NAT blocked → TURN relay]
 ```
 
-#### Voice Session Lifecycle
+### Connection Lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant A as Player A (Joiner)
-    participant S as Server (Socket.io)
-    participant B as Player B (Existing)
-
+    participant A as Joiner
+    participant S as Server
+    participant B as Existing Peer
     A->>S: room:join
-    S->>A: room:player_joined (list of existing peers)
-    A->>S: voice:offer { targetUserId: B, sdp: offer }
-    S->>B: voice:offer { fromUserId: A, sdp: offer }
-    B->>S: voice:answer { targetUserId: A, sdp: answer }
-    S->>A: voice:answer { fromUserId: B, sdp: answer }
-    A-->>S: voice:ice_candidate (loop)
-    S-->>B: voice:ice_candidate (loop)
-    B-->>S: voice:ice_candidate (loop)
-    S-->>A: voice:ice_candidate (loop)
-    Note over A,B: RTCPeerConnection established — direct UDP audio
+    S->>A: room:player_joined (peer list)
+    A->>S: voice:offer { targetUserId: B, sdp }
+    S->>B: voice:offer { fromUserId: A, sdp }
+    B->>S: voice:answer { targetUserId: A, sdp }
+    S->>A: voice:answer { fromUserId: B, sdp }
+    A-->>B: ICE candidates exchanged via server
+    Note over A,B: RTCPeerConnection established (direct UDP)
 ```
 
-#### P2P Mesh Topology (4 Players)
+### Topology
+4 players = full mesh = **6 RTCPeerConnections** (3 per player).
 
-With 4 players, each player maintains **3 peer connections** (full mesh):
-- Total connections in room: 6 RTCPeerConnections
-- Audio flows directly between peers (ultra-low latency)
-- Signaling messages routed through Socket.io server
+### TURN
+Use short-lived HMAC-signed credentials generated server-side per session (see Section 8.6). Options: self-hosted `coturn` or managed Metered.ca / Twilio (~$0.40/GB).
 
-#### STUN / TURN Configuration
-
-```javascript
-// Client-side ICE server config
-const iceServers = [
-  // Free STUN servers (Google) — handles ~85% of users
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  // TURN server — required for users behind strict NAT/firewalls
-  {
-    urls: 'turn:your-turn-server.com:3478',
-    username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-    credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL
-  }
-];
-```
-
-**TURN Server Options**:
-- **Self-hosted**: `coturn` on same Hostinger VPS (free, recommended for VPS deployment)
-- **Managed**: Twilio STUN/TURN API, Metered.ca (pay-as-you-go, ~$0.40/GB)
-
-#### Voice Controls UI States
-
-| State | Icon | Behavior |
+### Voice UI States
+| State | Indicator | Behaviour |
 |---|---|---|
-| Unmuted | 🎙️ (green) | Audio streaming to all peers |
-| Muted | 🔇 (red) | Local mic muted, no audio sent |
-| Disconnected | ⚠️ (yellow) | WebRTC connection lost, retry |
-| Not joined | 🎙️ (gray) | Click to join voice |
+| Unmuted | Green mic | Streaming to all peers |
+| Muted | Red mic | Local mic disabled |
+| Disconnected | Yellow warning | Retrying RTCPeerConnection |
+| Not joined | Grey mic | Click to enter voice |
 
-#### Voice Chat Implementation Plan
-
-**New Files**:
-- `lib/voice/webrtc-manager.ts` — `VoiceManager` class managing all `RTCPeerConnection` instances
-- `lib/voice/use-voice-chat.ts` — React hook wrapping `VoiceManager` with state
-- `components/voice/VoiceChatPanel.tsx` — Voice controls bar (mute, leave, volume)
-- `components/voice/VoiceParticipant.tsx` — Individual player speaking indicator
-- `server/voice-signaling.ts` — Socket.io handlers to relay voice signaling events
-
-**Modified Files**:
-- `components/room/RoomLobby.tsx` — Mount `VoiceChatPanel` on room join
-- `app/game/[gameId]/page.tsx` — Keep `VoiceChatPanel` active throughout game
-- `server/socket.ts` — Add voice signaling event handlers
-- `.env` — Add `TURN_USERNAME`, `TURN_CREDENTIAL`, `NEXT_PUBLIC_TURN_URL`
+### Key Files
+- `lib/voice/webrtc-manager.ts` — manages all `RTCPeerConnection` instances
+- `lib/hooks/useVoiceChat.ts` — React hook wrapping the manager
+- `components/voice/VoiceChatPanel.tsx` — mute/leave controls
+- `components/voice/VoiceParticipant.tsx` — speaking indicator per player
 
 ---
 
-## 6. UI/UX Component Breakdown
+## 7. UI Components
 
-### 6.1 Component Hierarchy
+### Page Structure
+- **AuthPages** — Login, Register
+- **DashboardPage** — Profile card, Friends list, Create/Join room
+- **GameLobbyPage** — Seat selection grid, Settings, VoiceChatPanel, Ready button
+- **GameTablePage** — Game header (board info + voice bar), Card table, Bidding panel, Playing panel, Scoring panel
 
-```
-App
-├── AuthProvider
-├── SocketProvider
-└── Layout
-    ├── Header
-    │   ├── Logo
-    │   ├── Navigation
-    │   └── UserMenu
-    └── Main
-        ├── AuthPages
-        │   ├── LoginPage
-        │   ├── RegisterPage
-        │   └── OnboardingPage (How to Play)
-        ├── DashboardPage
-        │   ├── UserProfileCard
-        │   ├── FriendsList
-        │   ├── CreateRoomButton
-        │   └── JoinRoomModal
-        ├── GameLobbyPage
-        │   ├── RoomInfoPanel
-        │   ├── SeatSelectionGrid
-        │   ├── PlayerCards
-        │   ├── SettingsPanel
-        │   ├── VoiceChatPanel        ← NEW: mounted on room join
-        │   │   ├── VoiceParticipant  ← NEW: per-player speaking indicator
-        │   │   └── MuteButton
-        │   └── ReadyButton
-        └── GameTablePage
-            ├── GameHeader
-            │   ├── GameInfo
-            │   ├── Timer
-            │   └── VoiceChatPanel    ← NEW: persists across game phases
-            │       └── VoiceParticipant
-            ├── GameTable
-            │   ├── CardTable (SVG layout)
-            │   ├── PlayerHand (South)
-            │   ├── OpponentHands (North/East/West)
-            │   ├── CurrentTrick
-            │   └── TrickCounter
-            ├── BiddingPanel
-            │   ├── BidHistory
-            │   ├── BiddingControls
-            │   └── ContractDisplay
-            ├── PlayingPanel
-            │   └── PlayableCards
-            └── ScoringPanel
-                ├── Scoreboard
-                └── DetailedResults
-```
+### Key Components
 
-### 6.2 Key Component Specifications
+**GameTable** — SVG table layout. North/South/East/West positions. Reveals dummy hand face-up after opening lead. Card deal and trick-collection animations.
 
-#### GameTable Component
-**Purpose**: Visual representation of the Bridge table
+**BiddingControls** — 7×5 grid (levels 1–7, suits ♣♦♥♠NT). Pass/Double/Redouble buttons shown conditionally. Invalid bids disabled automatically.
 
-**Layout**:
-```
-         [North Player]
-              ↓
-          [Current Trick]
-              ↓
-[West] ← [Card Table] → [East]
-              ↑
-         [Your Hand]
-          (South)
-```
+**PlayerHand** — Fan layout, hover to expand, click to play. Highlights valid/invalid cards during play phase. Suits sorted within hand.
 
-**Features**:
-- SVG-based circular table
-- Card animations for dealing and playing
-- Trick collection animations
-- Dummy hand display (face-up after first card)
+**BidHistory** — Table showing auction in seat order (West / North / East / South columns).
 
-#### BiddingControls Component
-**Purpose**: Interface for making bids
-
-**UI Elements**:
-- Grid of bid buttons (1C through 7NT)
-- Pass button
-- Double/Redouble buttons (conditional)
-- Disabled state for invalid bids
-- Visual hierarchy based on suit colors
-
-**Example Layout**:
-```
-| 7NT | 7♠ | 7♥ | 7♦ | 7♣ |
-| 6NT | 6♠ | 6♥ | 6♦ | 6♣ |
-...
-| 1NT | 1♠ | 1♥ | 1♦ | 1♣ |
-|     | DBL | RDBL | PASS |
-```
-
-#### PlayerHand Component
-**Purpose**: Display and interact with player's cards
-
-**Features**:
-- Fan layout of cards
-- Hover expansion
-- Click to play
-- Visual feedback for valid/invalid plays
-- Suit grouping and sorting
-
-#### BidHistory Component
-**Purpose**: Display auction sequence
-
-**UI**:
-```
-West    North   East    South
-Pass    1♥      Pass    2♥
-Pass    4♥      Pass    Pass
-Pass
-```
-
-### 6.3 Page Wireframes
-
-#### Dashboard Wireframe
-```
-┌────────────────────────────────────────────────┐
-│  BridgeOnline        Friends   Games   Profile │
-├────────────────────────────────────────────────┤
-│                                                 │
-│  ┌─────────────┐  ┌──────────────────────────┐│
-│  │             │  │  Friends (12)             ││
-│  │   Avatar    │  │  ┌────────────────────┐  ││
-│  │             │  │  │ User1    [Message] │  ││
-│  │  Username   │  │  │ User2    [Message] │  ││
-│  │             │  │  └────────────────────┘  ││
-│  │  Stats:     │  │                          ││
-│  │  Games: 42  │  │  Pending Requests (2)    ││
-│  │  Wins: 28   │  │  ┌────────────────────┐  ││
-│  └─────────────┘  │  │ User3  [✓] [✗]     │  ││
-│                    │  └────────────────────┘  ││
-│  ┌──────────────┐ │                          ││
-│  │ CREATE ROOM  │ │  [Search Users...]       ││
-│  └──────────────┘ └──────────────────────────┘│
-│  ┌──────────────┐                             │
-│  │  JOIN ROOM   │    Recent Games             │
-│  └──────────────┘    ┌─────────────────────┐ │
-│                      │ Game #42  2h ago    │ │
-│                      │ Result: +420 (Won)  │ │
-│                      └─────────────────────┘ │
-└────────────────────────────────────────────────┘
-```
-
-#### Game Lobby Wireframe
-```
-┌────────────────────────────────────────────────┐
-│  ← Back to Dashboard    Room: Friday Night Br. │
-│  Invite Code: ABCD1234              [Copy]     │
-├────────────────────────────────────────────────┤
-│                                                 │
-│            ┌─────────────────┐                 │
-│            │     NORTH       │                 │
-│            │  [Select Seat]  │                 │
-│            └─────────────────┘                 │
-│                                                 │
-│  ┌─────────────┐             ┌─────────────┐  │
-│  │    WEST     │             │    EAST     │  │
-│  │ User2 ✓     │             │[Select Seat]│  │
-│  └─────────────┘             └─────────────┘  │
-│                                                 │
-│            ┌─────────────────┐                 │
-│            │     SOUTH       │                 │
-│            │   You (Host)    │                 │
-│            │    [Ready]      │                 │
-│            └─────────────────┘                 │
-│                                                 │
-│  ┌─── Voice Chat ──────────────────────────┐  │
-│  │ 🎙️ User2 (speaking)  🔇 You (muted)     │  │
-│  │ [🎙️ Join Voice]           [🔇 Mute]    │  │
-│  └─────────────────────────────────────────┘  │
-│                                                 │
-│  Settings:                                     │
-│  ☑ Bidding System: SAYC                        │
-│  ☑ Boards: 1                                   │
-│  ☑ Timer: 90s                                  │
-│                          [Start Game]          │
-└────────────────────────────────────────────────┘
-```
-
-#### Game Table Wireframe
-```
-┌────────────────────────────────────────────────┐
-│  Board #1  |  Dealer: South  |  Vuln: None     │
-│  Contract: 4♥ by South       Time: 01:23  ⏱   │
-│  🎙️ User2 ●  🔇 User3  🎙️ User4  [🔇 Mute]   │  ← Voice bar
-├────────────────────────────────────────────────┤
-│                   North  🎙️                    │  ← speaking indicator
-│              [13 cards face-down]              │
-│                                                 │
-│  West    ┌─────────────────┐           East   │
-│  [13]    │  Current Trick:  │           [13]  │
-│          │   ♥7  ♥Q  ♥K  ?  │                 │
-│          └─────────────────┘                   │
-│                                                 │
-│                   South (You)                   │
-│     ♠AK5  ♥AQJ1098  ♦K32  ♣A4                  │
-│              [Click card to play]              │
-│                                                 │
-│  Tricks: NS: 5  EW: 2                          │
-├────────────────────────────────────────────────┤
-│  Bid History:                                  │
-│  S     W     N     E                           │
-│  1♥    Pass  3♥    Pass                        │
-│  4♥    Pass  Pass  Pass                        │
-└────────────────────────────────────────────────┘
-```
-
-### 6.4 Responsive Design Strategy
-
-**Breakpoints**:
-- Mobile: < 640px (portrait phone)
-- Tablet: 640px - 1024px
-- Desktop: > 1024px
-
-**Mobile Adaptations**:
-- Vertical card table layout
-- Simplified bid controls (modal overlay)
-- Collapsible bid history
-- Swipeable card hand
-- Bottom sheet for settings
+### Responsive Breakpoints
+- Mobile `< 640px`: vertical table layout, bid grid as modal overlay, swipeable hand
+- Tablet `640–1024px`: side-by-side panels
+- Desktop `> 1024px`: full table view
 
 ---
 
-## 7. Security & Data Protection
+## 8. Scalability
 
-### 7.1 Authentication Security
-- Password hashing using bcrypt (cost factor: 12)
-- JWT tokens with short expiration (15 minutes access, 7 days refresh)
-- HTTP-only secure cookies
-- Rate limiting on auth endpoints (5 attempts per 15 minutes)
-
-### 7.2 Game Integrity
-- **Server-side validation**: All game moves validated on server
-- **Encrypted card distribution**: Player hands never exposed to other clients
-- **Move sequence verification**: Prevent replay attacks or out-of-order moves
-- **Timeout detection**: Auto-forfeit on prolonged inactivity
-
-### 7.3 Data Privacy
-- Only expose necessary user data (no emails in public APIs)
-- Game results anonymized after 90 days
-- Invite codes expire after 24 hours
-- GDPR-compliant data export/deletion
-
----
-
-## 8. Performance Optimization
-
-### 8.1 Caching Strategy
-- **Redis caching**:
-  - Active game state (TTL: 4 hours)
-  - User sessions (TTL: 7 days)
-  - Room data (TTL: 24 hours)
-- **Client-side caching**:
-  - SWR for API data
-  - IndexedDB for offline game history
-
-### 8.2 Real-time Optimizations
-- Socket event batching for multiple rapid updates
-- Optimistic UI updates with rollback
-- Lazy loading of historical game data
-
-### 8.3 Asset Optimization
-- SVG card sprites for fast rendering
-- Next.js Image optimization for avatars
-- Code splitting by route
-
----
-
-## 9. Testing Strategy
-
-### 9.1 Unit Tests
-- Game logic functions (scoring, validation)
-- Card dealing randomness
-- Bid validation rules
-
-### 9.2 Integration Tests
-- API route handlers
-- Database operations (Prisma)
-- Socket event handlers
-
-### 9.3 End-to-End Tests
-- Complete game flow (Playwright)
-- Multiplayer synchronization
-- Authentication flows
-
----
-
-## 10. Deployment Architecture
-
-### 10.1 Hostinger Domain Hosting Setup
-
-The frontend will be hosted on a **Hostinger custom domain** with the following configuration:
-
-#### Domain Configuration
-- **Primary Domain**: Your custom Hostinger domain (e.g., `bridgeonline.yourdomain.com`)
-- **SSL Certificate**: Free SSL from Hostinger or Let's Encrypt
-- **DNS Management**: Hostinger DNS or Cloudflare
-
-#### Hosting Options
-
-**Option A: Hostinger Shared/Premium Hosting + External Backend**
-```mermaid
-graph TB
-    Users[Users] --> Domain[Hostinger Domain + SSL]
-    Domain --> CDN[Cloudflare CDN]
-    CDN --> Static[Next.js Static Export - Hostinger]
-    Static --> API[API - Vercel Serverless]
-    API --> Socket[Socket.io - Separate Server]
-    API --> DB[(PostgreSQL - Supabase)]
-    API --> Redis[(Redis - Upstash)]
-    Socket --> Redis
-```
-
-**Option B: Hostinger VPS (Recommended for Full Control)**
-```mermaid
-graph TB
-    Users[Users] --> Domain[Hostinger Domain + SSL]
-    Domain --> CDN[Cloudflare CDN]
-    CDN --> VPS[Hostinger VPS]
-    VPS --> NextJS[Next.js App - Node.js]
-    VPS --> Socket[Socket.io Server]
-    NextJS --> API[API Routes]
-    API --> DB[(PostgreSQL - Supabase/Self-hosted)]
-    API --> Redis[(Redis - Upstash/Self-hosted)]
-    Socket --> Redis
-```
-
-#### Hostinger Deployment Steps
-
-**For Static Export (Option A)**:
-```bash
-# 1. Configure Next.js for static export
-# Add to next.config.js:
-module.exports = {
-  output: 'export',
-  images: {
-    unoptimized: true // Required for static export
-  }
-}
-
-# 2. Build the static site
-npm run build
-
-# 3. Upload 'out' folder to Hostinger via FTP/SFTP or File Manager
-# Upload to: public_html/ (or your domain's root directory)
-
-# 4. Configure API endpoints to point to external backend
-NEXT_PUBLIC_API_URL=https://your-api.vercel.app
-NEXT_PUBLIC_SOCKET_URL=wss://your-socket-server.com
-```
-
-**For VPS Deployment (Option B)**:
-```bash
-# 1. SSH into Hostinger VPS
-ssh root@your-vps-ip
-
-# 2. Install Node.js and PM2
-curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-apt-get install -y nodejs
-npm install -g pm2
-
-# 3. Clone repository and install dependencies
-git clone https://github.com/yourusername/BridgeOnline.git
-cd BridgeOnline
-npm install
-
-# 4. Build the Next.js app
-npm run build
-
-# 5. Start with PM2
-pm2 start npm --name "bridge-app" -- start
-pm2 save
-pm2 startup
-
-# 6. Configure Nginx reverse proxy
-# See Nginx configuration below
-```
-
-#### Nginx Configuration (for VPS)
-```nginx
-server {
-    listen 80;
-    server_name bridgeonline.yourdomain.com;
-    
-    # Redirect HTTP to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name bridgeonline.yourdomain.com;
-    
-    # SSL Configuration
-    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-    
-    # Next.js app
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-    
-    # Socket.io WebSocket
-    location /socket.io/ {
-        proxy_pass http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-}
-```
-
-#### DNS Configuration
-
-Point your Hostinger domain to your hosting:
-
-**For Shared Hosting**:
-- **A Record**: Points to Hostinger server IP (provided by Hostinger)
-- **CNAME**: `www` points to your main domain
-
-**For VPS**:
-- **A Record**: `@` → Your VPS IP address
-- **A Record**: `www` → Your VPS IP address
-- **AAAA Record** (optional): IPv6 address
-
-**Cloudflare Integration** (Recommended):
-1. Add domain to Cloudflare
-2. Update nameservers at Hostinger to Cloudflare's
-3. Enable Cloudflare CDN (orange cloud)
-4. Configure SSL/TLS to "Full" or "Full (strict)"
-
-### 10.2 Environment Variables
-```env
-# Domain
-NEXT_PUBLIC_DOMAIN=https://bridgeonline.yourdomain.com
-
-# Database
-DATABASE_URL=postgresql://...
-DIRECT_URL=postgresql://...
-
-# Redis
-REDIS_URL=redis://...
-
-# Authentication
-NEXTAUTH_URL=https://bridgeonline.yourdomain.com
-NEXTAUTH_SECRET=...
-
-# API & Socket (adjust based on deployment option)
-# Option A (Static Export):
-NEXT_PUBLIC_API_URL=https://api.bridgeonline.com
-NEXT_PUBLIC_SOCKET_URL=wss://socket.bridgeonline.com
-
-# Option B (VPS):
-NEXT_PUBLIC_API_URL=https://bridgeonline.yourdomain.com/api
-NEXT_PUBLIC_SOCKET_URL=wss://bridgeonline.yourdomain.com/socket.io
-
-# File Storage
-BLOB_READ_WRITE_TOKEN=...
-```
-
-### 10.3 Performance Optimizations for Hostinger
-
-#### Caching Headers
-```javascript
-// next.config.js
-module.exports = {
-  async headers() {
-    return [
-      {
-        source: '/static/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-    ];
-  },
-};
-```
-
-#### Compression
-```bash
-# Enable Gzip/Brotli in Nginx (VPS)
-gzip on;
-gzip_vary on;
-gzip_comp_level 6;
-gzip_types text/plain text/css text/xml text/javascript 
-           application/json application/javascript application/xml+rss;
-```
-
-#### CDN Integration
-- Use Cloudflare for global CDN and DDoS protection
-- Cache static assets (images, JS, CSS) at edge locations
-- Enable Cloudflare's "Auto Minify" for HTML/CSS/JS
-
----
-
-## 11. Future Enhancements
-
-### Phase 2 Features
-- [ ] Tournament mode with multiple tables
-- [ ] AI opponents for practice
-- [ ] Replay analysis with commentary
-- [ ] Advanced statistics and ELO ratings
-- [ ] Mobile apps (React Native)
-- [ ] Spectator mode
-- [x] **Voice chat** — moved to core feature (see Section 5.3)
-
-### Phase 3 Features
-- [ ] Teaching mode with hints
-- [ ] Custom bidding system configurations
-- [ ] Team leagues and competitions
-- [ ] Integration with bridge organizations (ACBL)
-
----
-
-## 12. How to Play Manual (Onboarding Content)
-
-After registration, users will see an interactive tutorial covering:
-
-1. **Bridge Basics**
-   - Objective: Win tricks to fulfill your contract
-   - 4 players in 2 partnerships (North-South vs East-West)
-   - 52-card deck, 13 cards per player
-
-2. **The Bidding Phase**
-   - Communicate hand strength to partner
-   - Bid format: Level (1-7) + Suit (♣♦♥♠NT)
-   - Special calls: Pass, Double, Redouble
-   - Contract = final bid before 3 passes
-
-3. **The Playing Phase**
-   - Declarer plays their own hand + dummy
-   - Must follow suit if possible
-   - Trump cards beat non-trump cards
-   - Highest card wins trick
-
-4. **Scoring**
-   - Contract made: Earn points based on level
-   - Contract failed: Opponents score penalty
-   - Bonuses for games, slams, doubles
-
-5. **Interface Tutorial**
-   - Interactive walkthrough of game table
-   - Practice bidding and playing
-   - Common conventions in SAYC
-
----
-
-## Appendix A: Card Representation
-
-### Internal Format
-```javascript
-// Card representation: "RS" where R = Rank, S = Suit
-// Suits: 'C', 'D', 'H', 'S'
-// Ranks: '2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'
-// Example: "AS" = Ace of Spades
-
-const deck = [
-  '2C', '3C', '4C', '5C', '6C', '7C', '8C', '9C', 'TC', 'JC', 'QC', 'KC', 'AC',
-  '2D', '3D', '4D', '5D', '6D', '7D', '8D', '9D', 'TD', 'JD', 'QD', 'KD', 'AD',
-  '2H', '3H', '4H', '5H', '6H', '7H', '8H', '9H', 'TH', 'JH', 'QH', 'KH', 'AH',
-  '2S', '3S', '4S', '5S', '6S', '7S', '8S', '9S', 'TS', 'JS', 'QS', 'KS', 'AS'
-];
-```
-
-### Display Mapping
-```javascript
-const suitSymbols = {
-  C: '♣',
-  D: '♦',
-  H: '♥',
-  S: '♠'
-};
-
-const suitColors = {
-  C: 'black',
-  D: 'red',
-  H: 'red',
-  S: 'black'
-};
-```
-
----
-
-## Appendix B: Vulnerability Rotation
-
-Board number determines vulnerability:
-- Boards 1, 8, 11, 14: None vulnerable
-- Boards 2, 5, 12, 15: NS vulnerable
-- Boards 3, 6, 9, 16: EW vulnerable
-- Boards 4, 7, 10, 13: Both vulnerable
-
----
-
-## 13. Scalability Enhancements
-
-### 13.1 Socket.io Redis Adapter (P0)
-
-The default Socket.io setup is single-server — it cannot share room/event state across multiple Node.js instances. Adding the Redis adapter decouples socket state from any one process, enabling horizontal scaling behind a load balancer.
+### 8.1 Redis Socket.io Adapter (P0)
+Socket.io defaults to single-process state. Add `@socket.io/redis-adapter` so any server replica can emit to any room.
 
 ```javascript
 import { createAdapter } from '@socket.io/redis-adapter';
-import { createClient } from 'redis';
-
-const pubClient = createClient({ url: process.env.REDIS_URL });
-const subClient = pubClient.duplicate();
-
-await Promise.all([pubClient.connect(), subClient.connect()]);
 io.adapter(createAdapter(pubClient, subClient));
 ```
 
-**Impact**: Run N socket server replicas. Any instance can emit to any room.
+### 8.2 Hot/Cold Game State (P0)
+Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions.
 
----
-
-### 13.2 Hot/Cold Game State Split (P0)
-
-Writing full `game_state JSONB` to PostgreSQL on every move creates a synchronous write bottleneck. Active game state should live in Redis; PostgreSQL records only the immutable moves log.
-
-**State ownership**:
-
-| Data | Store | TTL |
-|---|---|---|
-| Active game state (hands, trick, phase) | Redis | 4 hours |
-| Move log | PostgreSQL `game_moves` | Permanent |
-| Phase transitions (bid→play→scoring) | Both (flush on transition) | — |
-| Completed game results | PostgreSQL `game_results` | Permanent |
-
-```javascript
-// On every move: write to Redis only
-await redis.set(`game:${gameId}:state`, JSON.stringify(gameState), { EX: 14400 });
-
-// On phase transition: persist snapshot to DB
-if (phaseChanged) {
-  await db.games.update({ where: { id: gameId }, data: { phase, game_state: gameState } });
-}
+### 8.3 BullMQ Action Queue (P1)
+Route socket game actions through a BullMQ queue so moves are durable and retriable on server crash.
+```
+socket event → BullMQ (Redis) → Game Worker → Socket.io broadcast
 ```
 
----
+### 8.4 Reconnection Protocol (P1)
+On disconnect, set a 30s Redis TTL key (`player:disconnected:{userId}`). If player rejoins within grace period, restore game state from Redis and notify room. After 30s, remove seat.
 
-### 13.3 BullMQ Game Action Queue (P1)
+### 8.5 Service Separation (P2)
+Three independently deployable units sharing only Redis and PostgreSQL:
+- **Next.js** (stateless, Vercel/VPS)
+- **Socket.io server** (signaling + broadcast)
+- **Game Worker** (BullMQ consumer)
 
-Direct socket → game logic → broadcast is synchronous and non-durable. A server crash mid-trick loses the action. BullMQ (Redis-backed) adds retry, durability, and backpressure.
+### 8.6 Dynamic TURN Credentials (P2)
+Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle.
 
-```
-Player action
-    │
-    ▼
-BullMQ Queue (Redis)
-    │
-    ▼
-Game Worker (validates + processes move)
-    │
-    ▼
-Socket.io broadcast to room
-```
-
-```javascript
-import { Queue, Worker } from 'bullmq';
-
-const gameQueue = new Queue('game-actions', { connection: redis });
-
-// Enqueue on socket event
-socket.on('game:make_bid', (data) => {
-  gameQueue.add('bid', { gameId, userId, ...data }, { attempts: 3 });
-});
-
-// Worker processes actions serially per game
-const worker = new Worker('game-actions', async (job) => {
-  const result = await processGameAction(job.data);
-  io.to(job.data.gameId).emit('game:bid_made', result);
-});
-```
-
----
-
-### 13.4 Player Reconnection Protocol (P1)
-
-A disconnected player should be able to rejoin within a grace period rather than forfeit their seat.
-
-```javascript
-// On disconnect: mark as disconnected, not removed (30s grace)
-socket.on('disconnect', async () => {
-  await redis.setex(`player:disconnected:${userId}`, 30, gameId);
-  io.to(gameId).emit('room:player_disconnected', { userId, gracePeriod: 30 });
-});
-
-// On rejoin: restore full state
-socket.on('game:rejoin', async ({ gameId }) => {
-  const pending = await redis.get(`player:disconnected:${userId}`);
-  if (pending === gameId) {
-    await redis.del(`player:disconnected:${userId}`);
-    const state = await redis.get(`game:${gameId}:state`);
-    socket.emit('game:state_restored', JSON.parse(state));
-    io.to(gameId).emit('room:player_reconnected', { userId });
-  }
-});
-```
-
----
-
-### 13.5 Service Separation for Independent Scaling (P2)
-
-Decouple the three runtime concerns so each scales independently:
-
-```
-┌─────────────────┐    ┌──────────────────────┐    ┌────────────────────┐
-│   Next.js App   │    │   Socket.io Server   │    │   Game Worker      │
-│   (stateless)   │    │   (signaling +       │    │   (BullMQ          │
-│   Vercel / VPS  │    │    broadcast)        │    │    consumer)       │
-└─────────────────┘    └──────────────────────┘    └────────────────────┘
-         └─────────────────────┴───────────────────────────┘
-                                │
-                    ┌───────────┴────────────┐
-                    │   Redis (shared bus)   │
-                    │   PostgreSQL (source   │
-                    │   of truth)            │
-                    └────────────────────────┘
-```
-
-Each unit can be scaled, deployed, and restarted independently without affecting the others.
-
----
-
-### 13.6 Dynamic TURN Credentials (P2)
-
-Static TURN credentials in `.env` are a security risk and cannot be rotated without redeployment. Generate short-lived credentials server-side per session.
-
-```javascript
-// Server: generate time-limited TURN credentials
-import crypto from 'crypto';
-
-function generateTURNCredentials(userId) {
-  const ttl = 3600; // 1 hour
-  const timestamp = Math.floor(Date.now() / 1000) + ttl;
-  const username = `${timestamp}:${userId}`;
-  const credential = crypto
-    .createHmac('sha1', process.env.TURN_SECRET)
-    .update(username)
-    .digest('base64');
-  return { username, credential, ttl };
-}
-
-// Client receives fresh credentials on room join, never from .env
-```
-
-**Also**: Replace self-hosted `coturn` with **Metered.ca** or **Twilio** for TURN to avoid VPS bandwidth exhaustion at scale.
-
----
-
-### 13.7 Missing Database Indexes (P2)
-
+### 8.7 Missing Indexes (P2)
 ```sql
--- Active game lookup by room (most frequent query during play)
 CREATE INDEX idx_games_room_phase ON games(game_room_id, phase)
   WHERE phase NOT IN ('completed');
-
--- GIN index for stats-based leaderboard queries
 CREATE INDEX idx_users_stats_gin ON users USING gin(stats);
-
--- Ordered move replay (already has unique constraint, add covering index)
 CREATE INDEX idx_game_moves_covering ON game_moves(game_id, sequence_number)
   INCLUDE (move_type, move_data);
 ```
 
+### 8.8 Observability (P3)
+- **Sentry** — game engine exceptions + socket errors
+- **Pino** — structured logs with `gameId`/`userId` on every line
+- **Prometheus + Grafana** — active connections, games/min, queue depth
+- **`/api/health`** — DB + Redis connectivity check for uptime monitoring
+
+### Priority Summary
+| Priority | Enhancement |
+|---|---|
+| P0 | Redis Socket.io adapter |
+| P0 | Hot/cold game state split |
+| P1 | BullMQ action queue |
+| P1 | Reconnection protocol |
+| P2 | Service separation |
+| P2 | Dynamic TURN credentials |
+| P2 | Missing DB indexes |
+| P3 | Observability stack |
+
 ---
 
-### 13.8 Observability Stack (P3)
+## 9. Security
 
-The current design has no metrics, tracing, or alerting. Minimum viable observability:
+- Passwords hashed with bcrypt (cost 12)
+- JWT: 15-min access token, 7-day refresh, HTTP-only secure cookies
+- Rate limiting on auth endpoints: 5 attempts / 15 min
+- All game moves validated server-side before applying to state
+- Player hands never sent to other clients (server filters per-player)
+- Invite codes expire after 24 hours
 
-| Concern | Tool | What to measure |
-|---|---|---|
-| Error tracking | Sentry | Game engine exceptions, unhandled socket errors |
-| Metrics | Prometheus + Grafana | Active connections, games/min, queue depth |
-| Structured logging | Pino | Every action logged with `gameId`, `userId`, `phase` |
-| Uptime monitoring | Betteruptime / UptimeRobot | Socket server health endpoint |
+---
 
-```javascript
-// Pino structured logging example
-import pino from 'pino';
-const logger = pino();
+## 10. Deployment
 
-logger.info({ gameId, userId, action: 'bid', bid: '1H' }, 'Game action processed');
+### Options
+**Option A — Static export + external backend**: Next.js → Hostinger static hosting; Socket.io → separate VPS/server; DB → Supabase/Railway; Redis → Upstash.
+
+**Option B (recommended) — Hostinger VPS**: Next.js + Socket.io + Game Worker all on one VPS behind Nginx reverse proxy, scaling to Option A's split as load grows.
+
+### Environment Variables
+```env
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+NEXTAUTH_SECRET=...
+NEXTAUTH_URL=https://yourdomain.com
+NEXT_PUBLIC_SOCKET_URL=wss://yourdomain.com/socket.io
+TURN_SECRET=...          # Server-side only — used to sign TURN credentials
+TURN_URL=turn:...
 ```
 
----
-
-### 13.9 Scalability Enhancement Priority Summary
-
-| Priority | Enhancement | Effort | Impact |
-|---|---|---|---|
-| **P0** | Redis Socket.io adapter | Low | Unblocks horizontal scaling |
-| **P0** | Hot/cold game state split | Medium | 10x write throughput |
-| **P1** | BullMQ game action queue | Medium | Crash durability + retry |
-| **P1** | Player reconnection protocol | Medium | Player retention |
-| **P2** | Service separation | High | Independent scaling per layer |
-| **P2** | Dynamic TURN credentials | Low | Security + cost control |
-| **P2** | Missing DB indexes | Low | Query performance |
-| **P3** | Observability stack | Medium | Operational visibility |
-
----
-
-## Summary
-
-This design document provides a complete architectural blueprint for BridgeOnline, covering all technical aspects from database schema to UI components. The system is designed to be:
-
-- **Scalable**: Redis-backed Socket.io adapter + hot/cold state split + service separation
-- **Real-time**: Socket.io for instant game updates with BullMQ durability
-- **Voice-enabled**: WebRTC peer-to-peer audio from room join through entire game session
-- **Secure**: Server-side validation, encrypted game state, dynamic TURN credentials
-- **User-friendly**: Modern UI with responsive design and reconnection recovery
-- **Compliant**: ACBL-standard Bridge rules
-- **Observable**: Sentry, Prometheus/Grafana, and structured Pino logging
-
-### Communication Architecture Summary
-
+### Communication Summary
 | Channel | Technology | Purpose |
 |---|---|---|
-| Game state sync | WebSocket (Socket.io + Redis adapter) | Bids, cards, room events |
-| Game action processing | BullMQ (Redis) | Durable, retriable move processing |
-| Voice signaling | WebSocket (same socket) | WebRTC offer/answer/ICE relay |
-| Voice audio | WebRTC (P2P UDP) | Real-time audio between players |
-| Voice fallback | TURN server (dynamic credentials) | Audio relay when P2P blocked by NAT |
+| Game state | Socket.io + Redis adapter | Bids, cards, room events |
+| Action processing | BullMQ (Redis) | Durable move queue |
+| Voice signaling | Socket.io (same connection) | WebRTC offer/answer/ICE relay |
+| Voice audio | WebRTC P2P UDP | Real-time audio |
+| Voice fallback | TURN server | NAT traversal |
 
-Next steps: Review this document, approve the technical approach, and proceed to implementation phase.
+---
+
+## 11. Future Work
+
+- [ ] Tournament mode (multiple tables)
+- [ ] AI opponents for solo practice
+- [ ] Game replay with analysis
+- [ ] ELO rating system
+- [ ] Mobile apps (React Native)
+- [ ] Spectator mode
+- [ ] Teaching mode with hints
