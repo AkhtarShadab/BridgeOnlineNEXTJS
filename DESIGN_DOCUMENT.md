@@ -1568,24 +1568,235 @@ Board number determines vulnerability:
 
 ---
 
+## 13. Scalability Enhancements
+
+### 13.1 Socket.io Redis Adapter (P0)
+
+The default Socket.io setup is single-server — it cannot share room/event state across multiple Node.js instances. Adding the Redis adapter decouples socket state from any one process, enabling horizontal scaling behind a load balancer.
+
+```javascript
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
+
+const pubClient = createClient({ url: process.env.REDIS_URL });
+const subClient = pubClient.duplicate();
+
+await Promise.all([pubClient.connect(), subClient.connect()]);
+io.adapter(createAdapter(pubClient, subClient));
+```
+
+**Impact**: Run N socket server replicas. Any instance can emit to any room.
+
+---
+
+### 13.2 Hot/Cold Game State Split (P0)
+
+Writing full `game_state JSONB` to PostgreSQL on every move creates a synchronous write bottleneck. Active game state should live in Redis; PostgreSQL records only the immutable moves log.
+
+**State ownership**:
+
+| Data | Store | TTL |
+|---|---|---|
+| Active game state (hands, trick, phase) | Redis | 4 hours |
+| Move log | PostgreSQL `game_moves` | Permanent |
+| Phase transitions (bid→play→scoring) | Both (flush on transition) | — |
+| Completed game results | PostgreSQL `game_results` | Permanent |
+
+```javascript
+// On every move: write to Redis only
+await redis.set(`game:${gameId}:state`, JSON.stringify(gameState), { EX: 14400 });
+
+// On phase transition: persist snapshot to DB
+if (phaseChanged) {
+  await db.games.update({ where: { id: gameId }, data: { phase, game_state: gameState } });
+}
+```
+
+---
+
+### 13.3 BullMQ Game Action Queue (P1)
+
+Direct socket → game logic → broadcast is synchronous and non-durable. A server crash mid-trick loses the action. BullMQ (Redis-backed) adds retry, durability, and backpressure.
+
+```
+Player action
+    │
+    ▼
+BullMQ Queue (Redis)
+    │
+    ▼
+Game Worker (validates + processes move)
+    │
+    ▼
+Socket.io broadcast to room
+```
+
+```javascript
+import { Queue, Worker } from 'bullmq';
+
+const gameQueue = new Queue('game-actions', { connection: redis });
+
+// Enqueue on socket event
+socket.on('game:make_bid', (data) => {
+  gameQueue.add('bid', { gameId, userId, ...data }, { attempts: 3 });
+});
+
+// Worker processes actions serially per game
+const worker = new Worker('game-actions', async (job) => {
+  const result = await processGameAction(job.data);
+  io.to(job.data.gameId).emit('game:bid_made', result);
+});
+```
+
+---
+
+### 13.4 Player Reconnection Protocol (P1)
+
+A disconnected player should be able to rejoin within a grace period rather than forfeit their seat.
+
+```javascript
+// On disconnect: mark as disconnected, not removed (30s grace)
+socket.on('disconnect', async () => {
+  await redis.setex(`player:disconnected:${userId}`, 30, gameId);
+  io.to(gameId).emit('room:player_disconnected', { userId, gracePeriod: 30 });
+});
+
+// On rejoin: restore full state
+socket.on('game:rejoin', async ({ gameId }) => {
+  const pending = await redis.get(`player:disconnected:${userId}`);
+  if (pending === gameId) {
+    await redis.del(`player:disconnected:${userId}`);
+    const state = await redis.get(`game:${gameId}:state`);
+    socket.emit('game:state_restored', JSON.parse(state));
+    io.to(gameId).emit('room:player_reconnected', { userId });
+  }
+});
+```
+
+---
+
+### 13.5 Service Separation for Independent Scaling (P2)
+
+Decouple the three runtime concerns so each scales independently:
+
+```
+┌─────────────────┐    ┌──────────────────────┐    ┌────────────────────┐
+│   Next.js App   │    │   Socket.io Server   │    │   Game Worker      │
+│   (stateless)   │    │   (signaling +       │    │   (BullMQ          │
+│   Vercel / VPS  │    │    broadcast)        │    │    consumer)       │
+└─────────────────┘    └──────────────────────┘    └────────────────────┘
+         └─────────────────────┴───────────────────────────┘
+                                │
+                    ┌───────────┴────────────┐
+                    │   Redis (shared bus)   │
+                    │   PostgreSQL (source   │
+                    │   of truth)            │
+                    └────────────────────────┘
+```
+
+Each unit can be scaled, deployed, and restarted independently without affecting the others.
+
+---
+
+### 13.6 Dynamic TURN Credentials (P2)
+
+Static TURN credentials in `.env` are a security risk and cannot be rotated without redeployment. Generate short-lived credentials server-side per session.
+
+```javascript
+// Server: generate time-limited TURN credentials
+import crypto from 'crypto';
+
+function generateTURNCredentials(userId) {
+  const ttl = 3600; // 1 hour
+  const timestamp = Math.floor(Date.now() / 1000) + ttl;
+  const username = `${timestamp}:${userId}`;
+  const credential = crypto
+    .createHmac('sha1', process.env.TURN_SECRET)
+    .update(username)
+    .digest('base64');
+  return { username, credential, ttl };
+}
+
+// Client receives fresh credentials on room join, never from .env
+```
+
+**Also**: Replace self-hosted `coturn` with **Metered.ca** or **Twilio** for TURN to avoid VPS bandwidth exhaustion at scale.
+
+---
+
+### 13.7 Missing Database Indexes (P2)
+
+```sql
+-- Active game lookup by room (most frequent query during play)
+CREATE INDEX idx_games_room_phase ON games(game_room_id, phase)
+  WHERE phase NOT IN ('completed');
+
+-- GIN index for stats-based leaderboard queries
+CREATE INDEX idx_users_stats_gin ON users USING gin(stats);
+
+-- Ordered move replay (already has unique constraint, add covering index)
+CREATE INDEX idx_game_moves_covering ON game_moves(game_id, sequence_number)
+  INCLUDE (move_type, move_data);
+```
+
+---
+
+### 13.8 Observability Stack (P3)
+
+The current design has no metrics, tracing, or alerting. Minimum viable observability:
+
+| Concern | Tool | What to measure |
+|---|---|---|
+| Error tracking | Sentry | Game engine exceptions, unhandled socket errors |
+| Metrics | Prometheus + Grafana | Active connections, games/min, queue depth |
+| Structured logging | Pino | Every action logged with `gameId`, `userId`, `phase` |
+| Uptime monitoring | Betteruptime / UptimeRobot | Socket server health endpoint |
+
+```javascript
+// Pino structured logging example
+import pino from 'pino';
+const logger = pino();
+
+logger.info({ gameId, userId, action: 'bid', bid: '1H' }, 'Game action processed');
+```
+
+---
+
+### 13.9 Scalability Enhancement Priority Summary
+
+| Priority | Enhancement | Effort | Impact |
+|---|---|---|---|
+| **P0** | Redis Socket.io adapter | Low | Unblocks horizontal scaling |
+| **P0** | Hot/cold game state split | Medium | 10x write throughput |
+| **P1** | BullMQ game action queue | Medium | Crash durability + retry |
+| **P1** | Player reconnection protocol | Medium | Player retention |
+| **P2** | Service separation | High | Independent scaling per layer |
+| **P2** | Dynamic TURN credentials | Low | Security + cost control |
+| **P2** | Missing DB indexes | Low | Query performance |
+| **P3** | Observability stack | Medium | Operational visibility |
+
+---
+
 ## Summary
 
 This design document provides a complete architectural blueprint for BridgeOnline, covering all technical aspects from database schema to UI components. The system is designed to be:
 
-- **Scalable**: Serverless architecture on Vercel
-- **Real-time**: Socket.io for instant game updates
+- **Scalable**: Redis-backed Socket.io adapter + hot/cold state split + service separation
+- **Real-time**: Socket.io for instant game updates with BullMQ durability
 - **Voice-enabled**: WebRTC peer-to-peer audio from room join through entire game session
-- **Secure**: Server-side validation and encrypted game state
-- **User-friendly**: Modern UI with responsive design
+- **Secure**: Server-side validation, encrypted game state, dynamic TURN credentials
+- **User-friendly**: Modern UI with responsive design and reconnection recovery
 - **Compliant**: ACBL-standard Bridge rules
+- **Observable**: Sentry, Prometheus/Grafana, and structured Pino logging
 
 ### Communication Architecture Summary
 
 | Channel | Technology | Purpose |
 |---|---|---|
-| Game state sync | WebSocket (Socket.io) | Bids, cards, room events |
+| Game state sync | WebSocket (Socket.io + Redis adapter) | Bids, cards, room events |
+| Game action processing | BullMQ (Redis) | Durable, retriable move processing |
 | Voice signaling | WebSocket (same socket) | WebRTC offer/answer/ICE relay |
 | Voice audio | WebRTC (P2P UDP) | Real-time audio between players |
-| Voice fallback | TURN server (coturn) | Audio relay when P2P blocked by NAT |
+| Voice fallback | TURN server (dynamic credentials) | Audio relay when P2P blocked by NAT |
 
 Next steps: Review this document, approve the technical approach, and proceed to implementation phase.
