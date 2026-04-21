@@ -9,7 +9,7 @@ import { prisma } from '@/lib/db';
  */
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { friendshipId: string } }
+    { params }: { params: Promise<{ friendshipId: string }> }
 ) {
     try {
         const session = await auth();
@@ -21,7 +21,7 @@ export async function PATCH(
             );
         }
 
-        const { friendshipId } = params;
+        const { friendshipId } = await params;
         const body = await request.json();
         const { action } = body;
 
@@ -86,7 +86,7 @@ export async function PATCH(
  */
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { friendshipId: string } }
+    { params }: { params: Promise<{ friendshipId: string }> }
 ) {
     try {
         const session = await auth();
@@ -98,7 +98,7 @@ export async function DELETE(
             );
         }
 
-        const { friendshipId } = params;
+        const { friendshipId } = await params;
 
         // Find the friendship
         const friendship = await prisma.friendship.findUnique({

@@ -122,8 +122,8 @@ export async function initializeGame(roomId: string) {
                 contract: null,
                 vulnerability,
                 dealer,
-                passCount: 0, // Track consecutive passes
-            },
+                passCount: 0,
+            } as object,
             deck: shuffledDeck.map(cardToString), // Store deck for verification
         },
     });

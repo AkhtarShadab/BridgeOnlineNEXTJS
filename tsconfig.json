@@ -35,6 +35,10 @@
         ".next/types/**/*.ts"
     ],
     "exclude": [
-        "node_modules"
+        "node_modules",
+        "vitest.config.ts",
+        "vitest.config.db.ts",
+        "vitest.config.socket.ts",
+        "playwright.config.ts"
     ]
 }

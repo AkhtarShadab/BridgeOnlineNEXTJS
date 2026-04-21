@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { validateBidAction, isBiddingComplete, determineContract, type BidAction } from '@/lib/game/bidding';
+import { GamePhase } from '@prisma/client';
 import { z } from 'zod';
 
 const bidSchema = z.object({
@@ -110,18 +111,18 @@ export async function POST(
 
         // Check if bidding is complete
         const biddingComplete = isBiddingComplete(bidHistory);
-        let newPhase = game.phase;
+        let newPhase: GamePhase = game.phase;
         let contract = null;
         let declarerId = game.declarerId;
 
         if (biddingComplete) {
             contract = determineContract(bidHistory);
             if (contract) {
-                newPhase = 'PLAYING';
+                newPhase = GamePhase.PLAYING;
                 declarerId = contract.declarer;
             } else {
                 // All passed, no contract - game ends
-                newPhase = 'COMPLETED';
+                newPhase = GamePhase.COMPLETED;
             }
         }
 

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { validateCardPlay, evaluateTrick } from '@/lib/game/playing';
+import { isValidPlay, determineTrickWinner } from '@/lib/game/playing';
+import type { Card } from '@/lib/constants/cards';
+import { GamePhase } from '@prisma/client';
 import { calculateScore } from '@/lib/game/scoring';
 import { z } from 'zod';
 
@@ -16,7 +18,7 @@ const playCardSchema = z.object({
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: { gameId: string } }
+    { params }: { params: Promise<{ gameId: string }> }
 ) {
     try {
         const session = await auth();
@@ -28,7 +30,7 @@ export async function POST(
             );
         }
 
-        const { gameId } = params;
+        const { gameId } = await params;
         const body = await request.json();
         const { card } = playCardSchema.parse(body);
 
@@ -103,7 +105,7 @@ export async function POST(
 
         // Validate play follows suit rules
         const currentTrick = gameState.currentTrick || [];
-        const validation = validateCardPlay(card, currentHand, currentTrick, gameState.contract?.suit);
+        const validation = isValidPlay(card as Card, currentHand as Card[], currentTrick, gameState.contract?.suit ?? null);
 
         if (!validation.valid) {
             return NextResponse.json(
@@ -125,23 +127,24 @@ export async function POST(
 
         let tricks = gameState.tricks || [];
         let nextPlayer = getNextPlayer(game.gamePlayers, game.currentPlayerId!);
-        let newPhase = game.phase;
+        let newPhase: GamePhase = game.phase;
 
         // Check if trick is complete (4 cards)
         if (currentTrick.length === 4) {
-            const winner = evaluateTrick(currentTrick, gameState.contract?.suit || null);
+            const winnerPlayerId = determineTrickWinner(currentTrick, gameState.contract?.suit ?? null);
+            const winnerPlayer = game.gamePlayers.find(p => p.userId === winnerPlayerId);
             tricks.push({
                 cards: currentTrick,
-                winner: winner.seat,
+                winner: winnerPlayer?.seat,
             });
 
             // Winner leads next trick
-            nextPlayer = game.gamePlayers.find(p => p.seat === winner.seat);
+            nextPlayer = winnerPlayer;
             gameState.currentTrick = [];
 
             // Check if all 13 tricks complete
             if (tricks.length === 13) {
-                newPhase = 'SCORING';
+                newPhase = GamePhase.SCORING;
 
                 // Calculate score
                 const tricksWon = calculateTricksWon(tricks);
@@ -163,14 +166,14 @@ export async function POST(
                         tricksWon: declarerTricks,
                         scoreNS: score.scoreNS,
                         scoreEW: score.scoreEW,
-                        detailedScoring: score,
+                        detailedScoring: score as object,
                     },
                 });
 
                 await prisma.game.update({
                     where: { id: gameId },
                     data: {
-                        phase: 'COMPLETED',
+                        phase: GamePhase.COMPLETED,
                         endedAt: new Date(),
                     },
                 });
@@ -219,7 +222,7 @@ export async function POST(
             success: true,
             card,
             trickComplete: currentTrick.length === 4,
-            gameComplete: newPhase === 'COMPLETED',
+            gameComplete: false,
         });
     } catch (error) {
         if (error instanceof z.ZodError) {
