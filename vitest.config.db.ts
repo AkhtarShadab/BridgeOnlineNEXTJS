@@ -8,6 +8,7 @@ export default defineConfig({
     envFile: '.env.test',
     globalSetup: ['./__tests__/helpers/db-setup.ts'],
     singleFork: true,
+    fileParallelism: false,
     include: ['__tests__/db/**/*.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,

@@ -6,7 +6,7 @@ export async function setup() {
   config({ path: path.resolve(process.cwd(), '.env.test') });
 
   try {
-    execSync('npx prisma db push --force-reset --skip-generate', {
+    execSync('npx prisma db push --skip-generate', {
       env: { ...process.env },
       stdio: 'pipe',
       timeout: 60_000,
