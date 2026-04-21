@@ -346,6 +346,7 @@ Issue #21 is the foundation — tests must exist before you can safely implement
 | 002 | 2026-04-20 | Layer 1 unit tests implemented — 123 tests, all passing |
 | 003 | 2026-04-20 | Layers 2–5 implemented (DB, Socket.io, Playwright E2E) |
 | 004 | 2026-04-21 | DB test concurrency bug fixed; full CI pipeline added; #21 closed |
+| 005 | 2026-04-21 | WebRTC voice chat committed; docs/learning reorganized; build errors fixed; issues #13/#14/#17 deprioritized to P3 |
 
 ---
 
@@ -360,6 +361,7 @@ Issue #21 is the foundation — tests must exist before you can safely implement
 | 05 — Testing | `__tests__/**`, `vitest.config*.ts` | 5-layer strategy, bugs found in tests |
 | 06 — WebRTC | `lib/voice/`, `lib/hooks/useVoiceChat.ts` | P2P voice, signaling, ICE/STUN/TURN |
 | 07 — Scalability | GitHub Issues #13–#20 | Redis, queues, reconnection, observability |
+| 08 — TypeScript Patterns | `app/api/**/*.ts`, `tsconfig.json` | Async params, Prisma enums, JSON casts, narrowing |
 
 ---
 
