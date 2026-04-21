@@ -6,6 +6,8 @@ import { useSession } from "next-auth/react";
 import { useSocket } from "@/lib/hooks/useSocket";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import InviteFriendsModal from "./InviteFriendsModal";
+import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
+import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
 
 interface Player {
     id: string;
@@ -41,6 +43,20 @@ export default function RoomPage() {
 
     // Use the global socket so join/leave persists across page navigations
     const { socket, connected, joinRoom } = useSocketContext();
+
+    const peersInRoom = room?.players.map(p => p.userId) || [];
+    const { isJoined, isMuted, participants, joinVoice, toggleMute } = useVoiceChat(roomId, peersInRoom);
+
+    // Auto-join voice as soon as room is loaded (so we have peers mapped)
+    useEffect(() => {
+        if (room && roomId && connected && !isJoined) {
+            joinVoice();
+        }
+    }, [room, roomId, connected, isJoined, joinVoice]);
+
+    const handleMicClick = () => {
+        if (isJoined) toggleMute();
+    };
 
     // Minimal shims so the rest of the file keeps working unchanged
     const on = (event: string, cb: (...args: any[]) => void) => socket?.on(event, cb);
@@ -281,6 +297,7 @@ export default function RoomPage() {
         const player = getSeatPlayer(seat);
         const isCurrentPlayer = player?.userId === session?.user?.id;
         const canSelect = !player && currentPlayer;
+        const voiceParticipant = player ? participants.find(p => p.userId === player.userId) : undefined;
 
         return (
             <div
@@ -312,6 +329,7 @@ export default function RoomPage() {
                                 </div>
                             </div>
                         </div>
+                        {player && <PlayerVoiceBadge participant={voiceParticipant} isLocal={isCurrentPlayer} />}
                     </div>
                 ) : (
                     <div className="text-gray-400 dark:text-gray-500 text-sm">
@@ -416,6 +434,25 @@ export default function RoomPage() {
                                     {currentPlayer.isReady ? "Not Ready" : "Ready"}
                                 </button>
                             )}
+                            <button
+                                onClick={handleMicClick}
+                                className={`px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300" :
+                                    isMuted ? "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400" :
+                                        "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-400"
+                                    }`}
+                                title={!isJoined ? "Enable Voice Chat" : isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                            >
+                                {isMuted || !isJoined ? (
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4l16 16" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                )}
+                            </button>
                             <button
                                 onClick={handleLeaveRoom}
                                 className="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"

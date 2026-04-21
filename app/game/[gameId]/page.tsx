@@ -5,6 +5,8 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
 import { useSocketContext } from "@/lib/context/SocketContext";
+import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
+import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
 
 export default function GamePage() {
     const router = useRouter();
@@ -19,6 +21,24 @@ export default function GamePage() {
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
     const { socket, connected, joinGame } = useSocketContext();
+
+    const peersInRoom = game?.players ? game.players.map((p: any) => p.userId) : [];
+    const { isJoined, isMuted, participants, joinVoice, toggleMute } = useVoiceChat(game?.roomId || null, peersInRoom);
+
+    // Auto-join voice as soon as game is ready
+    useEffect(() => {
+        if (game?.roomId && connected && !isJoined) {
+            joinVoice();
+        }
+    }, [game?.roomId, connected, isJoined, joinVoice]);
+
+    const handleMicClick = () => {
+        if (!isJoined) {
+            joinVoice();
+        } else {
+            toggleMute();
+        }
+    };
 
     const fetchGameState = useCallback(async () => {
         try {
@@ -282,12 +302,33 @@ export default function GamePage() {
                                 )}
                             </div>
                         </div>
-                        <button
-                            onClick={handleExit}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
-                        >
-                            Exit Game
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleMicClick}
+                                className={`px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300" :
+                                    isMuted ? "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400" :
+                                        "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-400"
+                                    }`}
+                                title={!isJoined ? "Enable Voice Chat" : isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                            >
+                                {isMuted || !isJoined ? (
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4l16 16" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                )}
+                            </button>
+                            <button
+                                onClick={handleExit}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                            >
+                                Exit Game
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -380,36 +421,41 @@ export default function GamePage() {
                                 const player = seatToPlayer[seat];
                                 const isCurrentTurn = player?.userId === game.currentPlayer?.id;
                                 const isMe = player?.userId === session?.user?.id;
+                                const voiceParticipant = player ? participants.find(p => p.userId === player.userId) : undefined;
+
                                 return (
                                     <div
                                         key={seat}
-                                        className={`flex items-center justify-between p-3 rounded-lg border-2 transition-all ${isCurrentTurn
+                                        className={`flex flex-col gap-2 p-3 rounded-lg border-2 transition-all ${isCurrentTurn
                                             ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                                             : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30'
                                             }`}
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${isCurrentTurn ? 'bg-emerald-500' : 'bg-gray-400'
-                                                }`}>
-                                                {seat[0]}
-                                            </div>
-                                            <div>
-                                                <div className="font-semibold text-gray-800 dark:text-gray-200">
-                                                    {player?.username || <span className="text-gray-400 italic">Empty</span>}
-                                                    {isMe && <span className="ml-2 text-xs text-emerald-600 font-normal">(you)</span>}
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${isCurrentTurn ? 'bg-emerald-500' : 'bg-gray-400'
+                                                    }`}>
+                                                    {seat[0]}
                                                 </div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                    {seat}
-                                                    {seat === dealerSeat && ' · Dealer'}
-                                                    {game.declarer?.id === player?.userId && ' · Declarer'}
+                                                <div>
+                                                    <div className="font-semibold text-gray-800 dark:text-gray-200">
+                                                        {player?.username || <span className="text-gray-400 italic">Empty</span>}
+                                                        {isMe && <span className="ml-2 text-xs text-emerald-600 font-normal">(you)</span>}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                        {seat}
+                                                        {seat === dealerSeat && ' · Dealer'}
+                                                        {game.declarer?.id === player?.userId && ' · Declarer'}
+                                                    </div>
                                                 </div>
                                             </div>
+                                            {isCurrentTurn && (
+                                                <span className="text-xs font-semibold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 rounded-full animate-pulse">
+                                                    Bidding...
+                                                </span>
+                                            )}
                                         </div>
-                                        {isCurrentTurn && (
-                                            <span className="text-xs font-semibold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 rounded-full animate-pulse">
-                                                Bidding...
-                                            </span>
-                                        )}
+                                        {player && <PlayerVoiceBadge participant={voiceParticipant} isLocal={isMe} />}
                                     </div>
                                 );
                             })}

@@ -74,8 +74,18 @@ BridgeOnline/
 │   └── db.ts             # Prisma client
 ├── prisma/               # Database schema
 ├── server/               # Socket.io server
-└── types/                # TypeScript type definitions
+├── types/                # TypeScript type definitions
+└── docs/                 # Project documentation
+    ├── design-document.md # Architecture and system design
+    └── testing-guide.md  # Testing layers and setup
 ```
+
+## Documentation
+
+All project documentation lives in [`docs/`](docs/):
+
+- [Design Document](docs/design-document.md) — architecture, data model, real-time design
+- [Testing Guide](docs/testing-guide.md) — unit, integration, E2E, and WebRTC test setup
 
 ## How to Play
 
