@@ -19,6 +19,7 @@ Each module builds on the previous one. Start from Session 01.
 | [06 — WebRTC & Voice Chat](./06-webrtc-voice.md) | P2P, SDP, ICE, mesh topology | Session 001 |
 | [07 — Scalability Gaps & Fixes](./07-scalability.md) | Redis, queues, reconnection, observability | Session 001 |
 | [08 — TypeScript & Next.js 14 Patterns](./08-typescript-nextjs-patterns.md) | Async params, Prisma JSON, enum narrowing | Session 005 |
+| [09 — Game State Bugs & Defensive Coding](./09-game-state-bugs-and-defensive-coding.md) | Guard clauses, spec tests, API testing with curl | Session 006 |
 
 ---
 

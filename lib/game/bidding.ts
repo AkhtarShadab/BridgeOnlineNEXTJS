@@ -100,12 +100,25 @@ export function validateBidAction(
 }
 
 /**
- * Check if bidding phase is complete (3 consecutive passes)
+ * Check if bidding phase is complete (a bid was made, followed by 3 consecutive passes).
+ * Does NOT return true for a passed-out board (4 passes, no bid) — use isPassedOut for that.
  */
 export function isBiddingComplete(bidHistory: BidAction[]): boolean {
     if (bidHistory.length < 4) return false;
+    const hasBid = bidHistory.some(a => a.type === 'bid');
     const lastThree = bidHistory.slice(-3);
-    return lastThree.every(action => action.type === 'pass');
+    return hasBid && lastThree.every(action => action.type === 'pass');
+}
+
+/**
+ * Check if the board was passed out (all 4 players passed with no bid made).
+ * In duplicate bridge this requires a redeal — the board is thrown out and redealt.
+ */
+export function isPassedOut(bidHistory: BidAction[]): boolean {
+    return (
+        bidHistory.length === 4 &&
+        bidHistory.every(a => a.type === 'pass')
+    );
 }
 
 /**

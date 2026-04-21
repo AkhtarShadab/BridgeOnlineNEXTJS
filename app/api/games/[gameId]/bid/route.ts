@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { validateBidAction, isBiddingComplete, determineContract, type BidAction } from '@/lib/game/bidding';
+import { validateBidAction, isBiddingComplete, isPassedOut, determineContract, type BidAction } from '@/lib/game/bidding';
+import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
+import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
 import { GamePhase } from '@prisma/client';
 import { z } from 'zod';
 
@@ -109,7 +111,79 @@ export async function POST(
         // Determine next player (clockwise)
         const nextPlayer = getNextPlayer(game.gamePlayers, session.user.id);
 
-        // Check if bidding is complete
+        // Check if all 4 players passed with no bid — passed-out board requires a redeal
+        if (isPassedOut(bidHistory)) {
+            const nextBoardNumber = (game.boardNumber ?? 1) + 1;
+            const newDealer = getDealerForBoard(nextBoardNumber);
+            const newVulnerability = calculateVulnerability(nextBoardNumber);
+
+            const deck = createDeck();
+            const shuffled = shuffleDeck(deck);
+            const hands = dealCards(shuffled);
+            const sortedHands = {
+                NORTH: sortHand(hands.NORTH),
+                SOUTH: sortHand(hands.SOUTH),
+                EAST: sortHand(hands.EAST),
+                WEST: sortHand(hands.WEST),
+            };
+
+            const dealerPlayer = game.gamePlayers.find((p: any) => p.seat === newDealer);
+
+            const redealtState = {
+                hands: sortedHands,
+                currentBid: null,
+                bidHistory: [],
+                tricks: [],
+                currentTrick: [],
+                trumpSuit: null,
+                contract: null,
+                vulnerability: newVulnerability,
+                dealer: newDealer,
+                passCount: 0,
+            };
+
+            await prisma.game.update({
+                where: { id: gameId },
+                data: {
+                    gameState: redealtState as object,
+                    phase: GamePhase.BIDDING,
+                    boardNumber: nextBoardNumber,
+                    dealerId: dealerPlayer?.userId ?? game.dealerId,
+                    currentPlayerId: dealerPlayer?.userId ?? game.currentPlayerId,
+                    deck: shuffled.map(cardToString),
+                },
+            });
+
+            if (global.io) {
+                const roomKey = `room-${game.gameRoom.id}`;
+                const gameKey = `game-${gameId}`;
+                global.io.to(roomKey).to(gameKey).emit('game:passed_out', {
+                    gameId,
+                    boardNumber: nextBoardNumber,
+                    dealer: newDealer,
+                    vulnerability: newVulnerability,
+                });
+            }
+
+            await prisma.gameMove.create({
+                data: {
+                    gameId,
+                    playerId: session.user.id,
+                    moveType: 'PASS',
+                    moveData: {},
+                    sequenceNumber: bidHistory.length,
+                },
+            });
+
+            return NextResponse.json({
+                success: true,
+                bidAction,
+                passedOut: true,
+                boardNumber: nextBoardNumber,
+            });
+        }
+
+        // Check if bidding is complete (a bid was made, followed by 3 consecutive passes)
         const biddingComplete = isBiddingComplete(bidHistory);
         let newPhase: GamePhase = game.phase;
         let contract = null;
@@ -120,9 +194,6 @@ export async function POST(
             if (contract) {
                 newPhase = GamePhase.PLAYING;
                 declarerId = contract.declarer;
-            } else {
-                // All passed, no contract - game ends
-                newPhase = GamePhase.COMPLETED;
             }
         }
 
