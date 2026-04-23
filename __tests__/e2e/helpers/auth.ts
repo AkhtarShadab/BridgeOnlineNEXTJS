@@ -13,18 +13,23 @@ export function uniqueUser() {
 }
 
 export async function registerAndLogin(page: Page, user: ReturnType<typeof uniqueUser>) {
-  // Register
+  // Register — inputs use id attributes (not name) in the Next.js register page
   await page.goto('/register');
-  await page.fill('input[name="email"]', user.email);
-  await page.fill('input[name="username"]', user.username);
-  await page.fill('input[name="password"]', user.password);
+  await page.fill('#email', user.email);
+  await page.fill('#username', user.username);
+  await page.fill('#password', user.password);
+  // confirmPassword field exists — fill it too
+  const confirmField = page.locator('#confirmPassword');
+  if (await confirmField.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await confirmField.fill(user.password);
+  }
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/(login|dashboard)/, { timeout: 15_000 });
 
   // If redirected to login, sign in
   if (page.url().includes('/login')) {
-    await page.fill('input[name="email"]', user.email);
-    await page.fill('input[name="password"]', user.password);
+    await page.fill('#email', user.email);
+    await page.fill('#password', user.password);
     await page.click('button[type="submit"]');
     await page.waitForURL('/dashboard', { timeout: 15_000 });
   }
@@ -32,8 +37,8 @@ export async function registerAndLogin(page: Page, user: ReturnType<typeof uniqu
 
 export async function login(page: Page, user: ReturnType<typeof uniqueUser>) {
   await page.goto('/login');
-  await page.fill('input[name="email"]', user.email);
-  await page.fill('input[name="password"]', user.password);
+  await page.fill('#email', user.email);
+  await page.fill('#password', user.password);
   await page.click('button[type="submit"]');
   await page.waitForURL('/dashboard', { timeout: 15_000 });
 }

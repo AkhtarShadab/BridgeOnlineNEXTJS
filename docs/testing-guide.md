@@ -34,12 +34,26 @@ sudo usermod -aG docker $USER   # then log out/in
 npm run test:db:start
 ```
 
-### Layer 4 + 5 — Playwright system libraries
+### Layer 4 + 5 — Playwright system libraries + Docker DB
+
+E2E tests start the full app (`npm run dev`) and run real browser flows. They need:
+
+1. **Playwright system libraries** (one-time, requires sudo):
 ```bash
-# Install Playwright browser system dependencies (one-time):
-sudo npx playwright install-deps
+sudo npx playwright install-deps chromium
 npx playwright install chromium
 ```
+
+2. **Docker test DB must be running** — the app connects to `localhost:5433` (same DB as Layer 2):
+```bash
+npm run test:db:start    # start postgres:16-alpine on port 5433
+npx prisma db push --skip-generate   # push schema to test DB (first time)
+```
+
+3. **Node.js ≥ 24 compatibility** — Node 24 defaults `process.env.NODE_ENV` to `"production"`
+when not set. `playwright.config.ts` now explicitly passes `NODE_ENV: 'development'` to the
+webServer process so Next.js starts in dev mode instead of looking for a production build.
+This is handled automatically — no manual action needed.
 
 ---
 
@@ -402,9 +416,12 @@ npm run test:socket
 ## Layer 4 — E2E Browser Tests
 
 ```bash
-# First time only:
-sudo npx playwright install-deps
+# First time only (system deps — requires sudo):
+sudo npx playwright install-deps chromium
 npx playwright install chromium
+
+# Start test DB (required — E2E needs a live database):
+npm run test:db:start
 
 # Then run (starts dev server automatically):
 npm run test:e2e

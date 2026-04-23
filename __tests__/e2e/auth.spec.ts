@@ -8,30 +8,51 @@ test.describe('Authentication', () => {
     await expect(page).toHaveURL('/dashboard');
   });
 
-  test('shows error for duplicate email on registration', async ({ page }) => {
+  test('shows error for duplicate email on registration', async ({ browser }) => {
     const user = uniqueUser();
-    await registerAndLogin(page, user);
 
-    // Try to register again with same email
-    await page.goto('/register');
-    await page.fill('input[name="email"]', user.email);
-    await page.fill('input[name="username"]', `${user.username}2`);
-    await page.fill('input[name="password"]', user.password);
-    await page.click('button[type="submit"]');
+    // Use context 1 to register the user
+    const ctx1 = await browser.newContext();
+    const page1 = await ctx1.newPage();
+    await registerAndLogin(page1, user);
+    await ctx1.close();
 
-    await expect(page.locator('text=/already exists|taken|duplicate/i')).toBeVisible({ timeout: 5_000 });
+    // Use a fresh context (not logged in) to attempt duplicate registration
+    const ctx2 = await browser.newContext();
+    const page2 = await ctx2.newPage();
+    await page2.goto('/register');
+    await page2.fill('#email', user.email);
+    await page2.fill('#username', `${user.username}2`);
+    await page2.fill('#password', user.password);
+    const confirmField = page2.locator('#confirmPassword');
+    if (await confirmField.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await confirmField.fill(user.password);
+    }
+    await page2.click('button[type="submit"]');
+
+    await expect(page2.locator('text=/already exists|taken|duplicate/i')).toBeVisible({ timeout: 5_000 });
+    await ctx2.close();
   });
 
-  test('shows error for wrong password on login', async ({ page }) => {
+  test('shows error for wrong password on login', async ({ browser }) => {
     const user = uniqueUser();
-    await registerAndLogin(page, user);
 
-    await page.goto('/login');
-    await page.fill('input[name="email"]', user.email);
-    await page.fill('input[name="password"]', 'wrongpassword');
-    await page.click('button[type="submit"]');
+    // Register the user in one context
+    const ctx1 = await browser.newContext();
+    const page1 = await ctx1.newPage();
+    await registerAndLogin(page1, user);
+    await ctx1.close();
 
-    await expect(page.locator('text=/invalid|incorrect|wrong/i')).toBeVisible({ timeout: 5_000 });
+    // Use a fresh context (not logged in) to test wrong password
+    const ctx2 = await browser.newContext();
+    const page2 = await ctx2.newPage();
+    await page2.goto('/login');
+    await page2.fill('#email', user.email);
+    await page2.fill('#password', 'wrongpassword');
+    await page2.click('button[type="submit"]');
+
+    await expect(page2.locator('text=/invalid|incorrect|wrong/i')).toBeVisible({ timeout: 5_000 });
+    await ctx2.close();
   });
 
   test('redirects unauthenticated user away from dashboard', async ({ page }) => {

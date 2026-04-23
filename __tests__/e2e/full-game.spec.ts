@@ -21,7 +21,8 @@ test.describe('Full 4-player game', () => {
     await pages[0].click('button[type="submit"]');
     await pages[0].waitForURL(/\/room\//, { timeout: 15_000 });
 
-    const inviteCode = await pages[0].locator('text=/[A-Z0-9]{6,10}/').first().innerText();
+    await pages[0].locator('button.font-mono').first().waitFor({ state: 'visible', timeout: 10_000 });
+    const inviteCode = await pages[0].locator('button.font-mono').first().innerText();
 
     // Players 1-3 join using invite code
     for (let i = 1; i <= 3; i++) {
@@ -73,7 +74,8 @@ test.describe('Full 4-player game', () => {
     const roomUrl = pages[0].url();
     const roomId = roomUrl.split('/room/')[1];
 
-    const inviteCode = await pages[0].locator('text=/[A-Z0-9]{6,10}/').first().innerText();
+    await pages[0].locator('button.font-mono').first().waitFor({ state: 'visible', timeout: 10_000 });
+    const inviteCode = await pages[0].locator('button.font-mono').first().innerText();
 
     // Others join
     for (let i = 1; i <= 3; i++) {
@@ -88,7 +90,8 @@ test.describe('Full 4-player game', () => {
     // Player 0 is already in SOUTH from creation, skip seat 3 (SOUTH)
     // Use the seat button if available; otherwise skip
     for (let i = 0; i < 4; i++) {
-      const seatBtn = pages[i].locator(`button:has-text("${seats[i]}"), text=${seats[i]}`).first();
+      const seatLabel = seats[i].charAt(0) + seats[i].slice(1).toLowerCase(); // "NORTH" → "North"
+      const seatBtn = pages[i].locator(`text=${seatLabel}`).first();
       if (await seatBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
         await seatBtn.click().catch(() => {});
         await pages[i].waitForTimeout(300);

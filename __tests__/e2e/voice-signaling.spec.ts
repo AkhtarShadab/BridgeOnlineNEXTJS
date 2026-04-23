@@ -13,10 +13,16 @@ import { uniqueUser, registerAndLogin } from './helpers/auth';
  * observe that the relay works correctly.
  */
 test.describe('WebRTC voice signaling (Layer 5)', () => {
-  test('Socket.io signaling relay: offer → answer → ICE via standalone server', async ({ page }) => {
+  test('Socket.io signaling relay: offer → answer → ICE via standalone server', async ({ browser }) => {
     // Use the Socket.io standalone port (3001) if set; otherwise test the integration
     // indirectly by verifying the app's socket connection responds to voice events.
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:3000';
+
+    // Load on a real page so the socket.io client script is reachable
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const user = uniqueUser();
+    await registerAndLogin(page, user);
 
     const result = await page.evaluate(async (url) => {
       return new Promise<{ offer: boolean; answer: boolean; ice: boolean }>((resolve) => {
@@ -29,6 +35,13 @@ test.describe('WebRTC voice signaling (Layer 5)', () => {
         const received = { offer: false, answer: false, ice: false };
         let alice: any, bob: any;
 
+        // Safety: resolve with whatever state after 8s so the Promise never hangs
+        const safetyTimer = setTimeout(() => {
+          if (alice) alice.disconnect();
+          if (bob) bob.disconnect();
+          resolve(received);
+        }, 8000);
+
         script.onload = () => {
           // @ts-ignore
           alice = window.io(url, { transports: ['websocket'] });
@@ -40,18 +53,23 @@ test.describe('WebRTC voice signaling (Layer 5)', () => {
           alice.on('connect', () => alice.emit('room:join', { roomId }));
           bob.on('connect', () => bob.emit('room:join', { roomId }));
 
+          // Correct WebRTC signaling flow:
+          // Alice → offer → Bob  (Bob receives, Bob responds)
+          // Bob   → answer → Alice (Alice receives, Alice sends ICE)
+          // Alice → ice_candidate → Bob (Bob receives, done)
           bob.on('voice:offer', () => {
             received.offer = true;
-            alice.emit('voice:answer', { roomId, sdp: 'answer', userId: 'bob' });
+            bob.emit('voice:answer', { roomId, sdp: 'answer', userId: 'bob' });
           });
 
           alice.on('voice:answer', () => {
             received.answer = true;
-            bob.emit('voice:ice_candidate', { roomId, candidate: 'bob-ice' });
+            alice.emit('voice:ice_candidate', { roomId, candidate: 'alice-ice' });
           });
 
-          alice.on('voice:ice_candidate', () => {
+          bob.on('voice:ice_candidate', () => {
             received.ice = true;
+            clearTimeout(safetyTimer);
             alice.disconnect();
             bob.disconnect();
             resolve(received);
@@ -69,6 +87,8 @@ test.describe('WebRTC voice signaling (Layer 5)', () => {
     expect(result.offer).toBe(true);
     expect(result.answer).toBe(true);
     expect(result.ice).toBe(true);
+
+    await ctx.close();
   });
 
   test('mute state is relayed to other room members', async ({ browser }) => {
@@ -84,7 +104,8 @@ test.describe('WebRTC voice signaling (Layer 5)', () => {
     await p1.click('button[type="submit"]');
     await p1.waitForURL(/\/room\//, { timeout: 15_000 });
 
-    const inviteCode = await p1.locator('text=/[A-Z0-9]{6,10}/').first().innerText();
+    await p1.locator('button.font-mono').first().waitFor({ state: 'visible', timeout: 10_000 });
+    const inviteCode = await p1.locator('button.font-mono').first().innerText();
 
     // p2 joins
     await p2.goto('/join-room');
@@ -111,7 +132,8 @@ test.describe('WebRTC voice signaling (Layer 5)', () => {
     await p1.click('button[type="submit"]');
     await p1.waitForURL(/\/room\//, { timeout: 15_000 });
 
-    const inviteCode = await p1.locator('text=/[A-Z0-9]{6,10}/').first().innerText();
+    await p1.locator('button.font-mono').first().waitFor({ state: 'visible', timeout: 10_000 });
+    const inviteCode = await p1.locator('button.font-mono').first().innerText();
 
     await p2.goto('/join-room');
     await p2.fill('input[placeholder="ABCD1234"]', inviteCode);
