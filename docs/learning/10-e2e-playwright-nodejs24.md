@@ -326,4 +326,72 @@ CDP is the same protocol that Chrome DevTools uses in the browser to inspect, de
 
 ---
 
+## Addendum — CI Failure: `npm ci` and Optional Platform-Specific Packages
+
+After the E2E fixes were pushed, the GitHub Actions pipeline failed at a completely different step — not the tests, but the dependency install:
+
+```
+npm error code EUSAGE
+npm error `npm ci` can only install packages when your package.json and
+npm error package-lock.json are in sync.
+npm error Missing: @emnapi/core@1.9.2 from lock file
+npm error Missing: @emnapi/runtime@1.9.2 from lock file
+```
+
+### Why This Happened
+
+Vitest 4 uses `rolldown` (a Rust-based bundler) internally. Rolldown ships platform-specific optional bindings for every supported OS/CPU combination:
+
+```
+@rolldown/binding-linux-x64-gnu      ← installed on linux-x64
+@rolldown/binding-darwin-arm64       ← installed on macOS Apple Silicon
+@rolldown/binding-wasm32-wasi        ← fallback for WASM environments
+...
+```
+
+The `@rolldown/binding-wasm32-wasi` package has hard-pinned exact dependencies:
+
+```json
+"dependencies": {
+  "@emnapi/core": "1.9.2",
+  "@emnapi/runtime": "1.9.2"
+}
+```
+
+On `linux-x64` (both WSL and GitHub Actions), `npm install` skips the wasm binding because it's the wrong platform. This means `@emnapi/core@1.9.2` and `@emnapi/runtime@1.9.2` are never resolved and never added to `package-lock.json`. The lockfile only had `@emnapi/core@1.10.0` (pulled in by a different package).
+
+`npm ci` then runs on GitHub Actions and checks that every package listed in the lockfile has all its dependencies also in the lockfile — including optional wasm binding packages. It finds the wasm binding, reads its `@emnapi/core@1.9.2` requirement, looks for it in the lockfile, and fails.
+
+### Why `npm install` Locally Didn't Fix It
+
+When you run `npm install --package-lock-only` on `linux-x64`, npm only resolves dependencies for the current platform. The wasm binding is skipped, so its deps are never written to the lockfile. The lockfile looks consistent locally but still fails `npm ci` in CI.
+
+### The Fix
+
+Change `npm ci` → `npm install` in the GitHub Actions workflow:
+
+```yaml
+# BEFORE
+- run: npm ci
+
+# AFTER
+- run: npm install
+```
+
+`npm install` still reads `package-lock.json` and installs the exact pinned versions. It just doesn't perform the strict cross-platform validation that `npm ci` does for optional packages. For a project where all tests pass cleanly (the actual correctness check), this is the right trade-off.
+
+We also bumped `node-version: 20` → `22` (LTS) to clear the deprecation warnings from GitHub Actions — Node 20 runner support ends September 2026.
+
+### The Rule
+
+> **`npm ci` is strict about ALL packages in the lockfile, including optional platform-specific ones.** If your project uses a native binding package that ships wasm/platform variants (rolldown, esbuild, @swc/core, sharp, etc.), the lockfile generated on one platform will be missing the nested deps of other platforms' optional bindings. Either use `npm install` in CI, or generate your lockfile with `--os=` and `--cpu=` flags to force all platform variants to resolve.
+
+| Symptom | Root Cause |
+|---|---|
+| `npm ci` fails: "Missing: X from lock file" | Optional platform-specific package has deps not resolved on current OS/CPU |
+| `npm install` locally shows no changes | npm only resolves current platform, wasm binding skipped |
+| Fix: `npm install` in CI | Still installs exact pinned versions, skips cross-platform lockfile validation |
+
+---
+
 **Next:** [Module 11 — Player Reconnection Protocol & Grace Period](./11-reconnection-protocol.md) *(upcoming)*
