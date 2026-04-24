@@ -15,10 +15,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Layer 1 — Vitest unit tests
         run: npm test
@@ -56,10 +56,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Push schema to test DB
         run: npx prisma db push --skip-generate
@@ -100,10 +100,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Push schema to test DB
         run: npx prisma db push --skip-generate
