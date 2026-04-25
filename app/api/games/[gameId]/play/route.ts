@@ -85,7 +85,9 @@ export async function POST(
         }
 
         const gameState = game.gameState as any;
-        const hands = game.deck as any;
+        // Hands are stored in gameState.hands (per-seat object), not in the deck field
+        // (game.deck is the flat shuffled array kept for verification only)
+        const hands: Record<string, string[]> = { ...(gameState.hands || {}) };
 
         // Get current player's hand
         const currentPlayerSeat = game.gamePlayers.find(p => p.userId === game.currentPlayerId)?.seat;
@@ -114,7 +116,7 @@ export async function POST(
             );
         }
 
-        // Remove card from hand
+        // Remove card from hand (update local copy)
         const updatedHand = currentHand.filter((c: string) => c !== card);
         hands[currentPlayerSeat] = updatedHand;
 
@@ -170,9 +172,18 @@ export async function POST(
                     },
                 });
 
+                // Save final gameState (all 13 tricks + updated hands) and mark completed
+                const finalGameState = {
+                    ...gameState,
+                    hands,
+                    currentTrick: [],
+                    tricks,
+                };
+
                 await prisma.game.update({
                     where: { id: gameId },
                     data: {
+                        gameState: finalGameState,
                         phase: GamePhase.COMPLETED,
                         endedAt: new Date(),
                     },
@@ -190,9 +201,10 @@ export async function POST(
             gameState.currentTrick = currentTrick;
         }
 
-        // Update game state
+        // Update game state — persist updated hands back into gameState.hands
         const updatedGameState = {
             ...gameState,
+            hands,
             currentTrick: currentTrick.length === 4 ? [] : currentTrick,
             tricks,
         };
@@ -201,7 +213,6 @@ export async function POST(
             where: { id: gameId },
             data: {
                 gameState: updatedGameState,
-                deck: hands,
                 currentPlayerId: nextPlayer?.userId,
                 phase: newPhase,
             },

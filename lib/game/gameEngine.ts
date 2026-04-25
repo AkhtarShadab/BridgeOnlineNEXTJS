@@ -90,12 +90,14 @@ export async function initializeGame(roomId: string) {
     const shuffledDeck = shuffleDeck(deck);
     const hands = dealCards(shuffledDeck);
 
-    // Sort each hand
+    // Sort each hand and convert to string format ("AS", "KH", etc.)
+    // The play route and isValidPlay() operate on string cards, so store
+    // hands as string arrays from the start to avoid type mismatches.
     const sortedHands = {
-        NORTH: sortHand(hands.NORTH),
-        SOUTH: sortHand(hands.SOUTH),
-        EAST: sortHand(hands.EAST),
-        WEST: sortHand(hands.WEST),
+        NORTH: sortHand(hands.NORTH).map(cardToString),
+        SOUTH: sortHand(hands.SOUTH).map(cardToString),
+        EAST: sortHand(hands.EAST).map(cardToString),
+        WEST: sortHand(hands.WEST).map(cardToString),
     };
 
     // Find dealer player
