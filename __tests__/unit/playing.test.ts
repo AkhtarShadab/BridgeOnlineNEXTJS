@@ -109,9 +109,7 @@ describe('determineTrickWinner', () => {
 
 // ─── getNextPlayer ───────────────────────────────────────────────────────────
 
-// NOTE: getNextPlayer uses lowercase seat keys ('north','south','east','west').
-// The order implemented is north→south→east→west→north.
-// (Bridge clockwise order is N→E→S→W — this is a known discrepancy in the impl.)
+// Bridge clockwise order: North → East → South → West → North
 
 describe('getNextPlayer', () => {
   const seats = {
@@ -121,19 +119,19 @@ describe('getNextPlayer', () => {
     west: 'player-W',
   }
 
-  it('north is followed by south', () => {
-    expect(getNextPlayer('player-N', seats)).toBe('player-S')
+  it('north is followed by east (clockwise)', () => {
+    expect(getNextPlayer('player-N', seats)).toBe('player-E')
   })
 
-  it('south is followed by east', () => {
-    expect(getNextPlayer('player-S', seats)).toBe('player-E')
+  it('east is followed by south (clockwise)', () => {
+    expect(getNextPlayer('player-E', seats)).toBe('player-S')
   })
 
-  it('east is followed by west', () => {
-    expect(getNextPlayer('player-E', seats)).toBe('player-W')
+  it('south is followed by west (clockwise)', () => {
+    expect(getNextPlayer('player-S', seats)).toBe('player-W')
   })
 
-  it('west wraps back to north', () => {
+  it('west wraps back to north (clockwise)', () => {
     expect(getNextPlayer('player-W', seats)).toBe('player-N')
   })
 

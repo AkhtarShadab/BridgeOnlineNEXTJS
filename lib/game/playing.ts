@@ -89,7 +89,7 @@ export function getNextPlayer(
     currentPlayer: string,
     seats: { north: string; south: string; east: string; west: string }
 ): string {
-    const seatOrder = ['north', 'south', 'east', 'west'] as const;
+    const seatOrder = ['north', 'east', 'south', 'west'] as const;
 
     // Find current player's seat
     const currentSeat = Object.entries(seats).find(
