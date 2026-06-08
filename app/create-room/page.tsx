@@ -55,29 +55,29 @@ export default function CreateRoomPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
+        <div className="min-h-screen bg-background">
             <div className="max-w-2xl mx-auto p-6">
                 {/* Header */}
                 <div className="mb-8">
-                    <h1 className="text-4xl font-bold text-emerald-800 dark:text-emerald-400 mb-2">
+                    <h1 className="text-4xl font-bold text-accent mb-2">
                         Create Game Room
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-400">
+                    <p className="text-text-muted">
                         Set up a new Bridge game room and invite your friends
                     </p>
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-2xl shadow-xl p-8">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 rounded-lg text-red-700 dark:text-red-400">
+                        <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-400">
                             {error}
                         </div>
                     )}
 
                     {/* Room Name */}
                     <div className="mb-6">
-                        <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-2">
+                        <label className="block text-foreground font-semibold mb-2">
                             Room Name
                         </label>
                         <input
@@ -87,19 +87,19 @@ export default function CreateRoomPage() {
                             placeholder="e.g., Friday Night Bridge"
                             required
                             maxLength={100}
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground placeholder:text-text-muted"
                         />
                     </div>
 
                     {/* Bidding System */}
                     <div className="mb-6">
-                        <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-2">
+                        <label className="block text-foreground font-semibold mb-2">
                             Bidding System
                         </label>
                         <select
                             value={biddingSystem}
                             onChange={(e) => setBiddingSystem(e.target.value)}
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground"
                         >
                             <option value="SAYC">Standard American Yellow Card (SAYC)</option>
                             <option value="StandardAmerican">Standard American</option>
@@ -108,7 +108,7 @@ export default function CreateRoomPage() {
 
                     {/* Number of Boards */}
                     <div className="mb-6">
-                        <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-2">
+                        <label className="block text-foreground font-semibold mb-2">
                             Number of Boards
                         </label>
                         <input
@@ -117,7 +117,7 @@ export default function CreateRoomPage() {
                             onChange={(e) => setNumBoards(parseInt(e.target.value) || 1)}
                             min={1}
                             max={10}
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground"
                         />
                     </div>
 
@@ -129,16 +129,16 @@ export default function CreateRoomPage() {
                                 id="timerEnabled"
                                 checked={timerEnabled}
                                 onChange={(e) => setTimerEnabled(e.target.checked)}
-                                className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                                className="w-5 h-5 rounded focus:ring-accent accent-accent"
                             />
-                            <label htmlFor="timerEnabled" className="ml-3 text-gray-700 dark:text-gray-300 font-semibold">
+                            <label htmlFor="timerEnabled" className="ml-3 text-foreground font-semibold">
                                 Enable Turn Timer
                             </label>
                         </div>
 
                         {timerEnabled && (
                             <div>
-                                <label className="block text-gray-600 dark:text-gray-400 text-sm mb-2">
+                                <label className="block text-text-muted text-sm mb-2">
                                     Timer Duration (seconds)
                                 </label>
                                 <input
@@ -147,7 +147,7 @@ export default function CreateRoomPage() {
                                     onChange={(e) => setTimerDuration(parseInt(e.target.value) || 30)}
                                     min={30}
                                     max={300}
-                                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white"
+                                    className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground"
                                 />
                             </div>
                         )}
@@ -158,14 +158,14 @@ export default function CreateRoomPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="flex-1 px-6 py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                            className="flex-1 px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             {loading ? "Creating..." : "Create Room"}
                         </button>
                         <button
                             type="button"
                             onClick={() => router.push("/dashboard")}
-                            className="px-6 py-3 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
+                            className="px-6 py-3 bg-surface-elevated border border-border text-foreground font-semibold rounded-lg hover:bg-border transition-colors"
                         >
                             Cancel
                         </button>

@@ -59,13 +59,13 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
-            <div className="w-full max-w-md p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
+        <div className="min-h-screen flex items-center justify-center bg-background">
+            <div className="w-full max-w-md p-8 bg-surface border border-border rounded-2xl shadow-xl">
                 <div className="text-center mb-8">
-                    <h1 className="text-3xl font-bold text-emerald-800 dark:text-emerald-400">
+                    <h1 className="text-3xl font-bold text-accent">
                         ♠ ♥ BridgeOnline ♦ ♣
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-400 mt-2">
+                    <p className="text-text-muted mt-2">
                         Create your account
                     </p>
                 </div>
@@ -74,7 +74,7 @@ export default function RegisterPage() {
                     <div>
                         <label
                             htmlFor="email"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            className="block text-sm font-medium text-foreground mb-2"
                         >
                             Email
                         </label>
@@ -84,7 +84,7 @@ export default function RegisterPage() {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-elevated text-foreground placeholder:text-text-muted"
                             placeholder="you@example.com"
                         />
                     </div>
@@ -92,7 +92,7 @@ export default function RegisterPage() {
                     <div>
                         <label
                             htmlFor="username"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            className="block text-sm font-medium text-foreground mb-2"
                         >
                             Username
                         </label>
@@ -104,7 +104,7 @@ export default function RegisterPage() {
                             required
                             minLength={3}
                             maxLength={50}
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-elevated text-foreground placeholder:text-text-muted"
                             placeholder="player1"
                         />
                     </div>
@@ -112,7 +112,7 @@ export default function RegisterPage() {
                     <div>
                         <label
                             htmlFor="password"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            className="block text-sm font-medium text-foreground mb-2"
                         >
                             Password
                         </label>
@@ -123,7 +123,7 @@ export default function RegisterPage() {
                             onChange={(e) => setPassword(e.target.value)}
                             required
                             minLength={6}
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-elevated text-foreground placeholder:text-text-muted"
                             placeholder="••••••••"
                         />
                     </div>
@@ -131,7 +131,7 @@ export default function RegisterPage() {
                     <div>
                         <label
                             htmlFor="confirmPassword"
-                            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                            className="block text-sm font-medium text-foreground mb-2"
                         >
                             Confirm Password
                         </label>
@@ -141,32 +141,32 @@ export default function RegisterPage() {
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             required
-                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                            className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent bg-surface-elevated text-foreground placeholder:text-text-muted"
                             placeholder="••••••••"
                         />
                     </div>
 
                     {error && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm text-red-600">{error}</p>
+                        <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                            <p className="text-sm text-red-400">{error}</p>
                         </div>
                     )}
 
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold rounded-lg transition-colors shadow-lg"
+                        className="w-full py-3 px-4 bg-accent hover:bg-accent-muted disabled:opacity-50 text-background font-semibold rounded-lg transition-colors shadow-lg"
                     >
                         {loading ? "Creating account..." : "Register"}
                     </button>
                 </form>
 
                 <div className="mt-6 text-center">
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-text-muted">
                         Already have an account?{" "}
                         <a
                             href="/login"
-                            className="text-emerald-600 hover:text-emerald-700 font-semibold"
+                            className="text-accent hover:text-accent-muted font-semibold"
                         >
                             Log In
                         </a>

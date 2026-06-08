@@ -265,10 +265,10 @@ export default function RoomPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
+            <div className="min-h-screen flex items-center justify-center bg-background">
                 <div className="text-center">
-                    <div className="text-4xl mb-4">♠ ♥ ♦ ♣</div>
-                    <p className="text-emerald-600 dark:text-emerald-400">Loading room...</p>
+                    <div className="text-4xl mb-4 text-accent">♠ ♥ ♦ ♣</div>
+                    <p className="text-accent">Loading room...</p>
                 </div>
             </div>
         );
@@ -276,15 +276,15 @@ export default function RoomPage() {
 
     if (error || !room) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
-                <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl">
-                    <div className="text-4xl mb-4 text-red-600">⚠️</div>
-                    <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4">
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="text-center bg-surface border border-border p-8 rounded-2xl shadow-xl">
+                    <div className="text-4xl mb-4 text-red-500">⚠️</div>
+                    <h2 className="text-2xl font-bold text-foreground mb-4">
                         {error || "Room not found"}
                     </h2>
                     <button
                         onClick={() => router.push("/dashboard")}
-                        className="px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                        className="px-6 py-3 bg-accent text-background rounded-lg hover:bg-accent-muted font-semibold"
                     >
                         Back to Dashboard
                     </button>
@@ -303,28 +303,28 @@ export default function RoomPage() {
             <div
                 className={`relative p-6 rounded-xl border-2 transition-all ${player
                     ? isCurrentPlayer
-                        ? "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-600"
-                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                        ? "bg-accent/10 border-accent"
+                        : "bg-surface border-border"
                     : canSelect
-                        ? "bg-gray-50 dark:bg-gray-700/50 border-dashed border-gray-400 dark:border-gray-500 cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
-                        : "bg-gray-50 dark:bg-gray-700/50 border-dashed border-gray-400 dark:border-gray-500"
+                        ? "bg-surface-elevated border-dashed border-border cursor-pointer hover:border-accent hover:bg-accent/5"
+                        : "bg-surface-elevated border-dashed border-border"
                     }`}
                 onClick={() => canSelect && handleSelectSeat(seat)}
             >
-                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">
+                <div className="text-xs font-bold text-text-muted mb-2 uppercase">
                     {position}
                 </div>
                 {player ? (
                     <div>
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
+                            <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center text-background font-bold">
                                 {player.username[0].toUpperCase()}
                             </div>
                             <div>
-                                <div className="font-semibold text-gray-800 dark:text-gray-200">
+                                <div className="font-semibold text-foreground">
                                     {player.username}
                                 </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                <div className="text-xs text-text-muted">
                                     {player.isReady ? "✓ Ready" : "Not Ready"}
                                 </div>
                             </div>
@@ -332,7 +332,7 @@ export default function RoomPage() {
                         {player && <PlayerVoiceBadge participant={voiceParticipant} isLocal={isCurrentPlayer} />}
                     </div>
                 ) : (
-                    <div className="text-gray-400 dark:text-gray-500 text-sm">
+                    <div className="text-text-muted text-sm">
                         {canSelect ? "Click to sit here" : "Waiting for player..."}
                     </div>
                 )}
@@ -341,24 +341,24 @@ export default function RoomPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950 p-6">
+        <div className="min-h-screen bg-background p-6">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="mb-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                <div className="mb-6 bg-surface border border-border rounded-2xl shadow-xl p-6">
                     <div className="flex justify-between items-start">
                         <div>
-                            <h1 className="text-3xl font-bold text-emerald-800 dark:text-emerald-400 mb-2">
+                            <h1 className="text-3xl font-bold text-accent mb-2">
                                 {room.name}
                             </h1>
-                            <p className="text-gray-600 dark:text-gray-400">
-                                Status: <span className="font-semibold">{room.status}</span>
+                            <p className="text-text-muted">
+                                Status: <span className="font-semibold text-foreground">{room.status}</span>
                             </p>
                         </div>
                         <div className="text-right">
-                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Invite Code</div>
+                            <div className="text-sm text-text-muted mb-2">Invite Code</div>
                             <button
                                 onClick={copyInviteCode}
-                                className="px-4 py-2 bg-emerald-600 text-white font-mono text-xl rounded-lg hover:bg-emerald-700 transition-colors"
+                                className="px-4 py-2 bg-accent text-background font-mono text-xl rounded-lg hover:bg-accent-muted transition-colors"
                             >
                                 {copied ? "Copied!" : room.inviteCode}
                             </button>
@@ -379,7 +379,7 @@ export default function RoomPage() {
                             <SeatCard position="West" seat="WEST" />
                         </div>
                         <div className="col-start-2 row-start-2 flex items-center justify-center">
-                            <div className="w-48 h-48 bg-emerald-800 dark:bg-emerald-900 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-2xl">
+                            <div className="card-table w-48 h-48 rounded-full flex items-center justify-center text-accent text-2xl font-bold shadow-2xl border border-border">
                                 ♠ ♥<br />♦ ♣
                             </div>
                         </div>
@@ -395,13 +395,13 @@ export default function RoomPage() {
                 </div>
 
                 {/* Player Controls */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
                     <div className="flex justify-between items-center">
                         <div>
-                            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                            <h2 className="text-xl font-semibold text-foreground mb-2">
                                 Players: {room.players.length}/4
                             </h2>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                            <p className="text-sm text-text-muted">
                                 {allReady
                                     ? "All players ready! Game can start."
                                     : `Waiting for ${4 - room.players.length} more player(s)`}
@@ -412,14 +412,14 @@ export default function RoomPage() {
                             {room.creatorId === session?.user?.id && allReady && (
                                 <button
                                     onClick={handleStartGame}
-                                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg"
+                                    className="px-6 py-3 bg-accent hover:bg-accent-muted text-background rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg"
                                 >
                                     🎮 Start Game
                                 </button>
                             )}
                             <button
                                 onClick={() => setShowInviteModal(true)}
-                                className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+                                className="px-6 py-3 bg-team-ew text-background font-semibold rounded-lg hover:opacity-90 transition-opacity"
                             >
                                 Invite Friends
                             </button>
@@ -427,8 +427,8 @@ export default function RoomPage() {
                                 <button
                                     onClick={handleToggleReady}
                                     className={`px-6 py-3 rounded-lg font-semibold transition-colors ${currentPlayer.isReady
-                                        ? "bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-600"
-                                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                                        ? "bg-surface-elevated border border-border text-foreground hover:bg-border"
+                                        : "bg-accent text-background hover:bg-accent-muted"
                                         }`}
                                 >
                                     {currentPlayer.isReady ? "Not Ready" : "Ready"}
@@ -436,9 +436,9 @@ export default function RoomPage() {
                             )}
                             <button
                                 onClick={handleMicClick}
-                                className={`px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300" :
-                                    isMuted ? "bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400" :
-                                        "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/50 dark:text-emerald-400"
+                                className={`px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-surface-elevated border border-border text-text-muted" :
+                                    isMuted ? "bg-red-900/30 text-red-400 hover:bg-red-900/50" :
+                                        "bg-accent/10 text-accent hover:bg-accent/20"
                                     }`}
                                 title={!isJoined ? "Enable Voice Chat" : isMuted ? "Unmute Microphone" : "Mute Microphone"}
                             >
