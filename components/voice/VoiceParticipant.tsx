@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { VoiceParticipant as VParticipant } from "@/lib/hooks/useVoiceChat";
+import { isEnabled } from "@/lib/features";
 
 interface VoiceParticipantProps {
     participant: VParticipant;
@@ -17,6 +18,8 @@ export default function VoiceParticipant({ participant, username, isLocal }: Voi
             audioRef.current.srcObject = participant.stream;
         }
     }, [participant.stream, isLocal]);
+
+    if (!isEnabled("voiceChat")) return null;
 
     return (
         <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-gray-50 dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 w-24">

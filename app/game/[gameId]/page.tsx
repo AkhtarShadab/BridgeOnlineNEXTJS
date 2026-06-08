@@ -7,6 +7,7 @@ import BiddingBox from "@/components/game/BiddingBox";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
+import { isEnabled } from "@/lib/features";
 
 export default function GamePage() {
     const router = useRouter();
@@ -27,12 +28,14 @@ export default function GamePage() {
 
     // Auto-join voice as soon as game is ready
     useEffect(() => {
+        if (!isEnabled("voiceChat")) return;
         if (game?.roomId && connected && !isJoined) {
             joinVoice();
         }
     }, [game?.roomId, connected, isJoined, joinVoice]);
 
     const handleMicClick = () => {
+        if (!isEnabled("voiceChat")) return;
         if (!isJoined) {
             joinVoice();
         } else {
@@ -303,6 +306,7 @@ export default function GamePage() {
                             </div>
                         </div>
                         <div className="flex gap-2">
+                            {isEnabled("voiceChat") && (
                             <button
                                 onClick={handleMicClick}
                                 className={`px-4 py-2 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300" :
@@ -322,6 +326,7 @@ export default function GamePage() {
                                     </svg>
                                 )}
                             </button>
+                            )}
                             <button
                                 onClick={handleExit}
                                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
@@ -455,7 +460,7 @@ export default function GamePage() {
                                                 </span>
                                             )}
                                         </div>
-                                        {player && <PlayerVoiceBadge participant={voiceParticipant} isLocal={isMe} />}
+                                        {player && isEnabled("voiceChat") && <PlayerVoiceBadge participant={voiceParticipant} isLocal={isMe} />}
                                     </div>
                                 );
                             })}

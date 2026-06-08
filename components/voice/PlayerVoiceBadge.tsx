@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { VoiceParticipant } from "@/lib/hooks/useVoiceChat";
+import { isEnabled } from "@/lib/features";
 
 interface PlayerVoiceBadgeProps {
     participant?: VoiceParticipant;
@@ -33,6 +34,7 @@ export default function PlayerVoiceBadge({ participant, isLocal }: PlayerVoiceBa
         }
     }, [volume]);
 
+    if (!isEnabled("voiceChat")) return null;
     if (!participant) return null;
 
     return (

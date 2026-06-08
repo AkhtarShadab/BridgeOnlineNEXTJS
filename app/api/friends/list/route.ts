@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         });
 
         // Transform accepted friendships to get the friend user
-        const friends = acceptedFriendships.map((friendship) => {
+        const friends = acceptedFriendships.map((friendship: (typeof acceptedFriendships)[number]) => {
             const friend =
                 friendship.requesterId === session.user.id
                     ? friendship.addressee

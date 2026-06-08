@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import { useSession } from "next-auth/react";
 import { VoiceManager } from "../voice/webrtc-manager";
+import { isEnabled } from "@/lib/features";
 
 export interface VoiceParticipant {
     userId: string;
@@ -25,7 +26,7 @@ export function useVoiceChat(roomId: string | null, peersInRoom: string[]) {
 
     // Initialize the manager once socket and session are ready
     useEffect(() => {
-        if (!socket || !connected || !session?.user || !roomId) return;
+        if (!socket || !connected || !session?.user || !roomId || !isEnabled("voiceChat")) return;
 
         const userId = session.user.id;
         const manager = new VoiceManager(socket as any, userId);
