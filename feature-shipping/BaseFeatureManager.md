@@ -9,12 +9,13 @@ Tracks branch, flag, status, and dependencies.
 
 | # | Feature | Branch | Flag | Status | Depends on |
 |---|---|---|---|---|---|
-| 00 | SYS_FUNC feature flags | `feat/sys-func-flags` | — | ✅ Implemented, unmerged | — |
-| 01 | UI modernization / dark theme | `feat/ui-dark-premium` | `FEATURE_NEW_UI` | ✅ Implemented, unmerged | 00 |
+| 00 | SYS_FUNC feature flags | `feat/sys-func-flags` | — | ✅ Merged to master via PR #22 | — |
+| 01 | UI modernization / dark theme | `feat/ui-dark-premium` | `FEATURE_NEW_UI` | ✅ Merged to master via PR #22 | 00 |
 | 02 | AI hint system | `feat/ai-hint-system` | `FEATURE_AI_HINTS` | 📋 Planned | 00 |
 | 03 | AI bot players | `feat/ai-bot-players` | `FEATURE_AI_BOTS` | 📋 Planned | 00, 02 |
 | 04 | AI post-game summary | `feat/ai-postgame-summary` | `FEATURE_AI_SUMMARY` | 📋 Planned | 00, 02 |
-| 05 | Playing table UI | `feat/playing-table` | — | ✅ Implemented on playing-table | 00, 01 |
+| 05 | Playing table UI | `feat/playing-table` | — | ✅ Merged to master via PR #22 | 00, 01 |
+| 05b | Multi-board / next game | `master` (committed) | — | ✅ Implemented | 05 |
 
 ---
 
@@ -160,6 +161,20 @@ Tracks branch, flag, status, and dependencies.
 - **Stage height:** Increased to `clamp(600px, 85vh, 960px)` for fan arc clearance
 - **Table settings panel:** Collapsible UI for fan style / rake / speed, persisted in localStorage
 - **Tricks scoreboard:** Floating `NS / EW` display in table center
+
+### Multi-board / next game (05b)
+
+**Implemented on:** `master` (commit `0fb4cc0`)
+
+After a game reaches `COMPLETED` phase, the play route checks `numBoards` in
+`GameRoom.settings`. If more boards remain:
+
+1. `startNextBoard()` creates a new `Game` record with `boardNumber + 1`
+2. Fresh cards dealt, new dealer/vulnerability calculated
+3. All players linked to the new game
+4. Socket emits `game:next_board` with the new `gameId`
+5. Frontend listens for `game:completed` (shows score + 3s countdown)
+6. Frontend listens for `game:next_board` (redirects immediately)
 
 ### Build tooling
 | Script | Purpose |
