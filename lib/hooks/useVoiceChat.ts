@@ -18,7 +18,9 @@ export function useVoiceChat(roomId: string | null, peersInRoom: string[]) {
     const { data: session } = useSession();
 
     const [participants, setParticipants] = useState<Record<string, VoiceParticipant>>({});
-    const [isMuted, setIsMuted] = useState(false);
+    const [isMuted, setIsMuted] = useState(() =>
+        typeof window !== 'undefined' && localStorage.getItem('voice:muted') === 'true'
+    );
     const [isJoined, setIsJoined] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -96,7 +98,12 @@ export function useVoiceChat(roomId: string | null, peersInRoom: string[]) {
         setError(null);
         await managerRef.current.initializeAndJoin(roomId, peersInRoom);
         setIsJoined(true);
-    }, [roomId, peersInRoom, isJoined]);
+
+        // Re-apply saved mute state to the fresh stream (e.g. after effect re-run)
+        if (isMuted && managerRef.current) {
+            managerRef.current.toggleMute(true);
+        }
+    }, [roomId, peersInRoom, isJoined, isMuted]);
 
     const leaveVoice = useCallback(() => {
         if (managerRef.current) {
@@ -112,6 +119,11 @@ export function useVoiceChat(roomId: string | null, peersInRoom: string[]) {
             const newMutedState = !isMuted;
             managerRef.current.toggleMute(newMutedState);
             setIsMuted(newMutedState);
+
+            // Persist mute preference across re-renders and page reloads
+            try {
+                localStorage.setItem('voice:muted', String(newMutedState));
+            } catch { /* localStorage may be unavailable */ }
 
             // Optimistically update our own state in the participants list
             if (session?.user?.id) {

@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
+import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
 import { isEnabled } from "@/lib/features";
+import { isValidPlay } from "@/lib/game/playing";
 
 // Inline SVG suit icons (viewBox 0 0 24 24)
 const SuitIcons = {
@@ -42,6 +44,26 @@ export default function GamePage() {
     const [game, setGame] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Table appearance settings (persisted in localStorage)
+    const [tableSettings, setTableSettings] = useState<{
+        visible: boolean;
+        fanStyle: 'fan' | 'tilt' | 'flat';
+        rake: number;
+        speed: number;
+    }>(() => {
+        try {
+            const saved = localStorage.getItem('table:settings');
+            return saved ? JSON.parse(saved) : { visible: false, fanStyle: 'fan', rake: 52, speed: 1 };
+        } catch { return { visible: false, fanStyle: 'fan', rake: 52, speed: 1 }; }
+    });
+    const updateTableSetting = (key: string, value: any) => {
+        setTableSettings(prev => {
+            const next = { ...prev, [key]: value };
+            try { localStorage.setItem('table:settings', JSON.stringify(next)); } catch {}
+            return next;
+        });
+    };
 
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
@@ -119,6 +141,14 @@ export default function GamePage() {
         };
     }, [socket, fetchGameState]);
 
+    // Listen for real-time card play updates.
+    useEffect(() => {
+        if (!socket) return;
+        const handleCardPlayed = () => { fetchGameState(); };
+        socket.on('game:card_played', handleCardPlayed);
+        return () => { socket.off('game:card_played', handleCardPlayed); };
+    }, [socket, fetchGameState]);
+
     // Flag set synchronously the moment the player clicks Exit.
     // Using a ref (not state) so changes are immediately visible inside the socket handler
     // without waiting for a re-render — avoids the race between socket event and navigation.
@@ -179,12 +209,9 @@ export default function GamePage() {
             });
 
             if (response.ok) {
-                // The server broadcasts game:bid_made to all players (including this one).
-                // fetchGameState() will be triggered by the socket event for everyone,
-                // so no manual call needed here. Do a direct refresh only if socket is absent.
-                if (!socket || !connected) {
-                    fetchGameState();
-                }
+                // Always refresh after a bid — socket event may arrive late or be missed
+                // if room membership wasn't established yet.
+                fetchGameState();
             } else {
                 const data = await response.json();
                 alert(data.error || "Failed to make bid");
@@ -298,26 +325,40 @@ export default function GamePage() {
     const isMyTurn = game.currentPlayer?.id === session?.user?.id;
     const currentPlayerName = game.currentPlayer?.username || '—';
 
+    /**
+     * Parse a card from either string ("AS") or object ({suit, rank}) format.
+     * The game engine stores hands as string arrays via cardToString().
+     */
+    const parseCard = (c: any): { rank: string; suit: string } => {
+        if (typeof c === 'string') {
+            return { rank: c[0], suit: c[1] };
+        }
+        return { rank: c.rank, suit: c.suit };
+    };
+
     // Render a single card
-    const renderCard = (card: any, index: number) => (
-        <div
-            key={index}
-            className="bg-surface-elevated border-2 border-border rounded-lg shadow-md p-3 min-w-[60px] text-center hover:scale-105 transition-transform cursor-pointer hover:border-accent"
-        >
-            <div className={`text-2xl font-bold ${getSuitColor(card.suit)}`}>
-                {card.rank === 'T' ? '10' : card.rank}
+    const renderCard = (c: any, index: number) => {
+        const card = parseCard(c);
+        return (
+            <div
+                key={index}
+                className="bg-surface-elevated border-2 border-border rounded-lg shadow-md p-3 min-w-[60px] text-center hover:scale-105 transition-transform cursor-pointer hover:border-accent"
+            >
+                <div className={`text-2xl font-bold ${getSuitColor(card.suit)}`}>
+                    {card.rank === 'T' ? '10' : card.rank}
+                </div>
+                <div className={`text-3xl ${getSuitColor(card.suit)}`}>
+                    {isEnabled("newUI")
+                        ? (() => {
+                            const Icon = SuitIcons[card.suit as keyof typeof SuitIcons];
+                            return Icon ? <Icon className="w-8 h-8 mx-auto" /> : getSuitSymbol(card.suit);
+                        })()
+                        : getSuitSymbol(card.suit)
+                    }
+                </div>
             </div>
-            <div className={`text-3xl ${getSuitColor(card.suit)}`}>
-                {isEnabled("newUI")
-                    ? (() => {
-                        const Icon = SuitIcons[card.suit as keyof typeof SuitIcons];
-                        return Icon ? <Icon className="w-8 h-8 mx-auto" /> : getSuitSymbol(card.suit);
-                    })()
-                    : getSuitSymbol(card.suit)
-                }
-            </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="min-h-screen bg-background p-4">
@@ -384,9 +425,14 @@ export default function GamePage() {
                         : 'bg-surface border border-border text-foreground'
                         }`}
                 >
-                    {isMyTurn
-                        ? '🎯 Your turn to bid!'
-                        : `⏳ Waiting for ${currentPlayerName} to bid...`}
+                    {game.phase === 'PLAYING'
+                        ? (isMyTurn
+                            ? '🎯 Your turn to play!'
+                            : `⏳ Waiting for ${currentPlayerName} to play...`)
+                        : (isMyTurn
+                            ? '🎯 Your turn to bid!'
+                            : `⏳ Waiting for ${currentPlayerName} to bid...`)
+                    }
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -517,33 +563,164 @@ export default function GamePage() {
                     </div>
                 </div>
 
-                {/* Player's Hand */}
-                <div className="bg-surface border border-border rounded-2xl shadow-xl p-6 mb-6">
-                    <h2 className="text-xl font-semibold text-foreground mb-4">
-                        Your Hand ({game.hand?.length || 0} cards)
-                    </h2>
-                    <div className="flex gap-2 flex-wrap justify-center">
-                        {game.hand && game.hand.length > 0 ? (
-                            game.hand.map((card: any, index: number) => renderCard(card, index))
-                        ) : (
-                            <p className="text-text-muted">No cards in hand</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Bidding Box — only during BIDDING phase */}
+                {/* Bidding phase: show hand + bidding box */}
                 {game.phase === 'BIDDING' && (
-                    <div className="mt-6">
-                        <BiddingBox
-                            onBid={handleBid}
-                            currentBid={game.currentBid || null}
-                            bidHistory={game.bidHistory || []}
-                            vulnerability={game.vulnerability || { NS: false, EW: false }}
-                            playerSeat={game.playerSeat}
-                            disabled={!isMyTurn}
-                        />
-                    </div>
+                    <>
+                        <div className="bg-surface border border-border rounded-2xl shadow-xl p-6 mb-6">
+                            <h2 className="text-xl font-semibold text-foreground mb-4">
+                                Your Hand ({game.hand?.length || 0} cards)
+                            </h2>
+                            <div className="flex gap-2 flex-wrap justify-center">
+                                {game.hand && game.hand.length > 0 ? (
+                                    game.hand.map((card: any, index: number) => renderCard(card, index))
+                                ) : (
+                                    <p className="text-text-muted">No cards in hand</p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-6">
+                            <BiddingBox
+                                onBid={handleBid}
+                                currentBid={game.currentBid || null}
+                                bidHistory={game.bidHistory || []}
+                                vulnerability={game.vulnerability || { NS: false, EW: false }}
+                                playerSeat={game.playerSeat}
+                                disabled={!isMyTurn}
+                            />
+                        </div>
+                    </>
                 )}
+
+                {/* Playing phase: 3D POV table */}
+                {game.phase === 'PLAYING' && (() => {
+                    // Map API data to PlayingTable props ------------------------------
+                    const viewer = FULL_TO_SEAT[game.playerSeat] as Seat;
+                    const declarer = FULL_TO_SEAT[game.declarerSeat] as Seat;
+                    const dummy = FULL_TO_SEAT[game.dummySeat] as Seat;
+                    const turnSeat = game.currentPlayer
+                        ? (FULL_TO_SEAT[(game.players as any[]).find((p: any) => p.userId === game.currentPlayer.id)?.seat] as Seat)
+                        : null;
+                    const dummyRevealed = !!game.dummyHand;
+
+                    // Viewer plays their own hand; if declarer, also plays dummy
+                    const controlled = turnSeat === viewer ? viewer
+                        : (viewer === declarer && dummyRevealed && turnSeat === dummy ? dummy : null);
+
+                    // Compute legal cards for the seat the viewer can play
+                    const legal = controlled && game.hand
+                        ? (game.hand as string[]).filter((c: string) => {
+                            const currentTrickArr = (game.currentTrick || []) as any[];
+                            const trumpSuit = game.contract?.suit as any ?? null;
+                            return isValidPlay(c, game.hand as any, currentTrickArr, trumpSuit).valid;
+                        })
+                        : null;
+
+                    // Map handCounts to compact seat format
+                    const hCounts: Partial<Record<Seat, number>> = {};
+                    if (game.handCounts) {
+                        for (const [seat, count] of Object.entries(game.handCounts as Record<string, number>)) {
+                            hCounts[FULL_TO_SEAT[seat] as Seat] = count;
+                        }
+                    }
+
+                    // Build name map from players array
+                    const seatNames: Partial<Record<Seat, string>> = {};
+                    (game.players || []).forEach((p: any) => {
+                        seatNames[FULL_TO_SEAT[p.seat] as Seat] = p.username;
+                    });
+
+                    // Map currentTrick to compact seat format
+                    const trickCards = (game.currentTrick || []).map((t: any) => ({
+                        seat: FULL_TO_SEAT[t.seat] as Seat,
+                        card: t.card,
+                    }));
+
+                    return (
+                        <div className="mt-6 space-y-2">
+                            {/* Table settings toggle */}
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => updateTableSetting('visible', !tableSettings.visible)}
+                                    className="px-3 py-1.5 text-xs font-medium bg-surface border border-border text-text-muted rounded-lg hover:text-foreground hover:border-accent transition-colors"
+                                >
+                                    {tableSettings.visible ? 'Hide Table Settings' : 'Table Settings ⚙'}
+                                </button>
+                            </div>
+
+                            {/* Collapsible settings panel */}
+                            {tableSettings.visible && (
+                                <div className="bg-surface border border-border rounded-xl p-4 flex flex-wrap gap-6 items-center">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-text-muted font-medium">Fan:</label>
+                                        {(['fan', 'tilt', 'flat'] as const).map(s => (
+                                            <button key={s}
+                                                onClick={() => updateTableSetting('fanStyle', s)}
+                                                className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${tableSettings.fanStyle === s
+                                                    ? 'bg-accent text-background'
+                                                    : 'bg-surface-elevated text-text-muted border border-border hover:text-foreground'
+                                                    }`}
+                                            >{s}</button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-text-muted font-medium">Rake:</label>
+                                        <input type="range" min="30" max="62"
+                                            value={tableSettings.rake}
+                                            onChange={e => updateTableSetting('rake', Number(e.target.value))}
+                                            className="w-20 accent-accent"
+                                        />
+                                        <span className="text-xs text-foreground w-6">{tableSettings.rake}°</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-text-muted font-medium">Speed:</label>
+                                        <input type="range" min="0.5" max="2" step="0.1"
+                                            value={tableSettings.speed}
+                                            onChange={e => updateTableSetting('speed', Number(e.target.value))}
+                                            className="w-20 accent-accent"
+                                        />
+                                        <span className="text-xs text-foreground w-6">{tableSettings.speed.toFixed(1)}x</span>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            const reset = { fanStyle: 'fan' as const, rake: 52, speed: 1 };
+                                            setTableSettings(prev => ({ ...prev, ...reset }));
+                                            try { localStorage.setItem('table:settings', JSON.stringify({ ...tableSettings, ...reset })); } catch {}
+                                        }}
+                                        className="px-2.5 py-1 text-xs text-text-muted hover:text-foreground border border-border rounded-md"
+                                    >Reset</button>
+                                </div>
+                            )}
+
+                            <PlayingTable
+                                viewerSeat={viewer}
+                                declarer={declarer}
+                                dummySeat={dummy}
+                                trump={(game.contract?.suit as any) ?? 'NT'}
+                                dummyRevealed={dummyRevealed}
+                                hands={{
+                                    [viewer]: (game.hand || []) as string[],
+                                    ...(dummyRevealed && game.dummyHand ? { [dummy]: game.dummyHand as string[] } : {}),
+                                }}
+                                handCounts={hCounts}
+                                trick={trickCards}
+                                turn={turnSeat}
+                                legalCards={legal}
+                                tricksWon={game.tricksWon ?? { NS: 0, EW: 0 }}
+                                names={seatNames}
+                                fanStyle={tableSettings.fanStyle}
+                                rake={tableSettings.rake}
+                                speed={tableSettings.speed}
+                                onPlayCard={(seat, card) => {
+                                    fetch(`/api/games/${gameId}/play`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ card }),
+                                    }).then(fetchGameState);
+                                }}
+                            />
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );

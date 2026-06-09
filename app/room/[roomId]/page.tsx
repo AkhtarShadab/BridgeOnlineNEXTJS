@@ -261,7 +261,8 @@ export default function RoomPage() {
     };
 
     const currentPlayer = room?.players.find(p => p.userId === session?.user?.id);
-    const allReady = room?.players.length === 4 && room.players.every(p => p.isReady);
+    const allReady = room?.players.length >= 2 && room.players.every(p => p.isReady);
+    const enoughPlayers = room?.players.length === 4;
 
     if (loading) {
         return (
@@ -410,12 +411,18 @@ export default function RoomPage() {
 
                         <div className="flex gap-3">
                             {room.creatorId === session?.user?.id && allReady && (
-                                <button
-                                    onClick={handleStartGame}
-                                    className="px-6 py-3 bg-accent hover:bg-accent-muted text-background rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg"
-                                >
-                                    🎮 Start Game
-                                </button>
+                                enoughPlayers ? (
+                                    <button
+                                        onClick={handleStartGame}
+                                        className="px-6 py-3 bg-accent hover:bg-accent-muted text-background rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg"
+                                    >
+                                        🎮 Start Game
+                                    </button>
+                                ) : (
+                                    <span className="px-6 py-3 bg-surface-elevated border border-border text-text-muted rounded-lg font-medium text-sm">
+                                        Need {4 - (room?.players.length ?? 0)} more player(s) to start
+                                    </span>
+                                )
                             )}
                             <button
                                 onClick={() => setShowInviteModal(true)}

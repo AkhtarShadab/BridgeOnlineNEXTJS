@@ -63,13 +63,29 @@ export async function POST(
             data: { isReady: false },
         });
 
-        // 3. Revert room status to WAITING so remaining players can ready-up again
+        // 3. If the exiting player was the room creator, transfer ownership
+        //    to another remaining player so they can start the game.
+        if (game.gameRoom.creatorId === session.user.id) {
+            const remainingPlayer = await prisma.gamePlayer.findFirst({
+                where: { gameRoomId: roomId },
+                orderBy: { joinedAt: 'asc' },
+            });
+            await prisma.gameRoom.update({
+                where: { id: roomId },
+                data: {
+                    creatorId: remainingPlayer?.userId ?? game.gameRoom.creatorId,
+                },
+            });
+            console.log(`[ExitRoute] Transferred room ${roomId} ownership to ${remainingPlayer?.userId ?? 'nobody'}`);
+        }
+
+        // 4. Revert room status to WAITING so remaining players can ready-up again
         await prisma.gameRoom.update({
             where: { id: roomId },
             data: { status: 'WAITING' },
         });
 
-        // 4. Notify all OTHER players via socket to redirect to the room lobby
+        // 5. Notify all OTHER players via socket to redirect to the room lobby
         if (global.io) {
             global.io
                 .to(`room-${roomId}`)
