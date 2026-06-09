@@ -6,20 +6,24 @@ export default {
         "./components/**/*.{js,ts,jsx,tsx,mdx}",
         "./app/**/*.{js,ts,jsx,tsx,mdx}",
     ],
+    darkMode: 'class',
     theme: {
         extend: {
             colors: {
-                background: "var(--background)",
-                foreground: "var(--foreground)",
-                // Bridge card suits
-                'suit-red': '#DC2626',
-                'suit-black': '#1F2937',
-                // Card table green
-                'table-green': '#047857',
-                'table-green-dark': '#065F46',
-                // Teams
-                'team-ns': '#3B82F6',
-                'team-ew': '#EF4444',
+                background: 'var(--background)',
+                foreground: 'var(--foreground)',
+                surface: 'var(--surface)',
+                'surface-elevated': 'var(--surface-elevated)',
+                border: 'var(--border)',
+                accent: 'var(--accent)',
+                'accent-muted': 'var(--accent-muted)',
+                felt: 'var(--felt)',
+                text: 'var(--text)',
+                'text-muted': 'var(--text-muted)',
+                'suit-red': 'var(--suit-red)',
+                'suit-black': 'var(--suit-black)',
+                'team-ns': 'var(--team-ns)',
+                'team-ew': 'var(--team-ew)',
             },
             animation: {
                 'card-deal': 'cardDeal 0.5s ease-out',

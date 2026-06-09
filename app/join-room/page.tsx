@@ -43,29 +43,29 @@ export default function JoinRoomPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
+        <div className="min-h-screen bg-background">
             <div className="max-w-xl mx-auto p-6 pt-20">
                 {/* Header */}
                 <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-emerald-800 dark:text-emerald-400 mb-2">
+                    <h1 className="text-4xl font-bold text-accent mb-2">
                         Join Game Room
                     </h1>
-                    <p className="text-gray-600 dark:text-gray-400">
+                    <p className="text-text-muted">
                         Enter the invite code to join an existing game
                     </p>
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
+                <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-2xl shadow-xl p-8">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 rounded-lg text-red-700 dark:text-red-400">
+                        <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-400">
                             {error}
                         </div>
                     )}
 
                     {/* Invite Code Input */}
                     <div className="mb-6">
-                        <label className="block text-gray-700 dark:text-gray-300 font-semibold mb-2">
+                        <label className="block text-foreground font-semibold mb-2">
                             Invite Code
                         </label>
                         <input
@@ -75,9 +75,9 @@ export default function JoinRoomPage() {
                             placeholder="ABCD1234"
                             required
                             maxLength={10}
-                            className="w-full px-4 py-4 text-2xl text-center font-mono tracking-wider border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:bg-gray-700 dark:text-white uppercase"
+                            className="w-full px-4 py-4 text-2xl text-center font-mono tracking-wider border-2 border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground uppercase placeholder:text-text-muted"
                         />
-                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        <p className="mt-2 text-sm text-text-muted">
                             Enter the 6-10 character code shared by the room host
                         </p>
                     </div>
@@ -87,14 +87,14 @@ export default function JoinRoomPage() {
                         <button
                             type="submit"
                             disabled={loading || inviteCode.length < 6}
-                            className="flex-1 px-6 py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                            className="flex-1 px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             {loading ? "Joining..." : "Join Room"}
                         </button>
                         <button
                             type="button"
                             onClick={() => router.push("/dashboard")}
-                            className="px-6 py-3 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
+                            className="px-6 py-3 bg-surface-elevated border border-border text-foreground font-semibold rounded-lg hover:bg-border transition-colors"
                         >
                             Cancel
                         </button>
@@ -102,16 +102,16 @@ export default function JoinRoomPage() {
                 </form>
 
                 {/* Help Section */}
-                <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                <div className="mt-8 bg-surface border border-border rounded-xl shadow-lg p-6">
+                    <h2 className="text-xl font-semibold text-foreground mb-3">
                         Don't have an invite code?
                     </h2>
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    <p className="text-text-muted mb-4">
                         Ask a friend to create a room and share the invite code with you, or create your own room and invite others to play.
                     </p>
                     <button
                         onClick={() => router.push("/create-room")}
-                        className="w-full px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition-colors"
+                        className="w-full px-6 py-3 bg-accent-muted text-background font-semibold rounded-lg hover:bg-accent transition-colors"
                     >
                         Create Your Own Room
                     </button>

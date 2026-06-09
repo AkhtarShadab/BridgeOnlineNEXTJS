@@ -3,21 +3,42 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #050a14;
+  --foreground: #e2e8f0;
+  --surface: #0f1a2e;
+  --surface-elevated: #162035;
+  --border: #1e3a5f;
+  --accent: #38bdf8;
+  --accent-muted: #0ea5e9;
+  --felt: #0a1628;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --suit-red: #f87171;
+  --suit-black: #e2e8f0;
+  --team-ns: #38bdf8;
+  --team-ew: #a78bfa;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark {
+  --background: #050a14;
+  --foreground: #e2e8f0;
+  --surface: #0f1a2e;
+  --surface-elevated: #162035;
+  --border: #1e3a5f;
+  --accent: #38bdf8;
+  --accent-muted: #0ea5e9;
+  --felt: #0a1628;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --suit-red: #f87171;
+  --suit-black: #e2e8f0;
+  --team-ns: #38bdf8;
+  --team-ew: #a78bfa;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
@@ -26,39 +47,91 @@ body {
   }
 }
 
-/* Card table styles */
+/* Card table — deep navy felt */
 .card-table {
-  background: radial-gradient(ellipse at center, #059669 0%, #047857 100%);
-  box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.3);
+  background: var(--felt);
+  background: radial-gradient(ellipse at center, #0d2040 0%, var(--felt) 100%);
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
 }
 
-/* Card styles */
+/* Felt grain texture via diagonal stripe overlay */
+.card-table::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.012) 3px,
+      rgba(255, 255, 255, 0.012) 6px
+    );
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+/* Playing card */
 .playing-card {
   aspect-ratio: 2.5/3.5;
   border-radius: 8px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .playing-card:hover {
   transform: translateY(-10px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 4px 20px rgba(56, 189, 248, 0.2),
+    0 8px 16px rgba(0, 0, 0, 0.5);
 }
 
 .playing-card.face-down {
-  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, #050a14 0%, #162035 50%, #0f1a2e 100%);
+  border: 1px solid var(--border);
 }
 
 /* Suit colors */
 .suit-hearts,
 .suit-diamonds {
-  color: #DC2626;
+  color: var(--suit-red);
 }
 
 .suit-spades,
 .suit-clubs {
-  color: #1F2937;
+  color: var(--suit-black);
+}
+
+/* Turn ring — conic gradient for active seat indicator */
+.turn-ring {
+  position: relative;
+  border-radius: 0.75rem;
+}
+
+.turn-ring::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: calc(0.75rem + 2px);
+  background: conic-gradient(
+    from 0deg,
+    var(--accent) 0deg,
+    transparent 200deg,
+    transparent 280deg,
+    var(--accent) 360deg
+  );
+  z-index: 0;
+  opacity: 0.85;
+}
+
+.turn-ring > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Card animations */

@@ -15,19 +15,19 @@ export default function GlobalError({
     }, [error]);
 
     return (
-        <html>
-            <body>
-                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-100 dark:from-gray-900 dark:to-red-950">
+        <html className="dark">
+            <body style={{ background: "#050a14", color: "#e2e8f0", margin: 0 }}>
+                <div className="min-h-screen flex items-center justify-center bg-background">
                     <div className="text-center p-8 max-w-2xl">
                         <div className="mb-8">
-                            <h1 className="text-9xl font-bold text-red-600 dark:text-red-400 mb-4">
+                            <h1 className="text-9xl font-bold text-red-500 mb-4">
                                 Oops!
                             </h1>
-                            <div className="text-6xl mb-4">💔 ♠ ♥ ♦ ♣</div>
-                            <h2 className="text-3xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
+                            <div className="text-6xl mb-4">♠ ♥ ♦ ♣</div>
+                            <h2 className="text-3xl font-semibold text-foreground mb-4">
                                 Critical Error
                             </h2>
-                            <p className="text-xl text-gray-600 dark:text-gray-400 mb-8">
+                            <p className="text-xl text-text-muted mb-8">
                                 The app encountered a critical error. Let's reshuffle and try again!
                             </p>
                         </div>
@@ -42,11 +42,11 @@ export default function GlobalError({
                         </div>
 
                         {process.env.NODE_ENV === "development" && error && (
-                            <div className="mt-8 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-left">
-                                <p className="text-xs font-semibold text-gray-700  dark:text-gray-300 mb-2">
+                            <div className="mt-8 p-4 bg-surface-elevated border border-border rounded-lg text-left">
+                                <p className="text-xs font-semibold text-foreground mb-2">
                                     Error Details:
                                 </p>
-                                <pre className="text-xs text-red-600 dark:text-red-400 overflow-auto">
+                                <pre className="text-xs text-red-400 overflow-auto">
                                     {error.message}
                                 </pre>
                             </div>

@@ -11,14 +11,14 @@ export default async function DashboardPage() {
 
     return (
         <ActiveRoomChecker>
-            <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-900 dark:to-emerald-950">
+            <div className="min-h-screen bg-background">
                 <div className="container mx-auto px-4 py-8">
-                    <div className="flex justify-between items-center mb-8">
-                        <h1 className="text-4xl font-bold text-emerald-800 dark:text-emerald-400">
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="text-4xl font-bold text-accent">
                             ♠ ♥ BridgeOnline ♦ ♣
                         </h1>
                         <div className="flex items-center gap-4">
-                            <span className=" text-gray-700 dark:text-gray-300">
+                            <span className="text-text-muted">
                                 Welcome, {session.user.name}
                             </span>
                             <form action={async () => {
@@ -36,60 +36,81 @@ export default async function DashboardPage() {
                         </div>
                     </div>
 
+                    {/* Stats strip */}
+                    <div
+                        data-testid="stats-strip"
+                        className="flex gap-8 items-center bg-surface/80 backdrop-blur-sm border border-border rounded-xl px-6 py-4 mb-8"
+                    >
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-accent">0</div>
+                            <div className="text-xs text-text-muted uppercase tracking-wide">Games Played</div>
+                        </div>
+                        <div className="w-px h-8 bg-border" />
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-accent">—</div>
+                            <div className="text-xs text-text-muted uppercase tracking-wide">Win Rate</div>
+                        </div>
+                        <div className="w-px h-8 bg-border" />
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-accent">—</div>
+                            <div className="text-xs text-text-muted uppercase tracking-wide">Rank</div>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* User Profile Card */}
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Your Profile
                             </h2>
                             <div className="space-y-2">
-                                <p className="text-gray-600 dark:text-gray-400">
-                                    <span className="font-semibold">Username:</span> {session.user.name}
+                                <p className="text-text-muted">
+                                    <span className="font-semibold text-foreground">Username:</span> {session.user.name}
                                 </p>
-                                <p className="text-gray-600 dark:text-gray-400">
-                                    <span className="font-semibold">Email:</span> {session.user.email}
+                                <p className="text-text-muted">
+                                    <span className="font-semibold text-foreground">Email:</span> {session.user.email}
                                 </p>
                             </div>
                         </div>
 
                         {/* Create Room Card */}
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-foreground mb-4">
                                 New Game
                             </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            <p className="text-text-muted mb-4">
                                 Create a new game room and invite friends to play Bridge
                             </p>
                             <a
                                 href="/create-room"
-                                className="inline-block w-full text-center px-6 py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-colors"
+                                className="inline-block w-full text-center px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent-muted transition-colors"
                             >
                                 Create Room
                             </a>
                         </div>
 
                         {/* Join Room Card */}
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Join Game
                             </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            <p className="text-text-muted mb-4">
                                 Enter an invite code to join an existing game
                             </p>
                             <a
                                 href="/join-room"
-                                className="inline-block w-full text-center px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition-colors"
+                                className="inline-block w-full text-center px-6 py-3 bg-accent-muted text-background font-semibold rounded-lg hover:bg-accent transition-colors"
                             >
                                 Join Room
                             </a>
                         </div>
 
                         {/* Room Invitations Card */}
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Room Invitations
                             </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            <p className="text-text-muted mb-4">
                                 View and accept invitations from your friends
                             </p>
                             <a
@@ -101,16 +122,16 @@ export default async function DashboardPage() {
                         </div>
 
                         {/* Friends Card */}
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
-                            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                            <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Friends
                             </h2>
-                            <p className="text-gray-600 dark:text-gray-400 mb-4">
+                            <p className="text-text-muted mb-4">
                                 Manage your friends and find new players to play with
                             </p>
                             <a
                                 href="/dashboard/friends"
-                                className="inline-block w-full text-center px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+                                className="inline-block w-full text-center px-6 py-3 bg-team-ew text-background font-semibold rounded-lg hover:opacity-90 transition-opacity"
                             >
                                 View Friends
                             </a>
@@ -118,13 +139,13 @@ export default async function DashboardPage() {
                     </div>
 
                     {/* How to Play Section */}
-                    <div className="mt-12 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg">
-                        <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-6">
+                    <div className="mt-12 bg-surface/80 backdrop-blur-sm border border-border p-8 rounded-xl shadow-lg">
+                        <h2 className="text-3xl font-bold text-foreground mb-6">
                             How to Play
                         </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-gray-600 dark:text-gray-400">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-text-muted">
                             <div>
-                                <h3 className="text-xl font-semibold text-emerald-700 dark:text-emerald-400 mb-2">
+                                <h3 className="text-xl font-semibold text-accent mb-2">
                                     1. Create or Join a Room
                                 </h3>
                                 <p>
@@ -132,7 +153,7 @@ export default async function DashboardPage() {
                                 </p>
                             </div>
                             <div>
-                                <h3 className="text-xl font-semibold text-emerald-700 dark:text-emerald-400 mb-2">
+                                <h3 className="text-xl font-semibold text-accent mb-2">
                                     2. The Bidding Phase
                                 </h3>
                                 <p>
@@ -140,7 +161,7 @@ export default async function DashboardPage() {
                                 </p>
                             </div>
                             <div>
-                                <h3 className="text-xl font-semibold text-emerald-700 dark:text-emerald-400 mb-2">
+                                <h3 className="text-xl font-semibold text-accent mb-2">
                                     3. Playing the Hand
                                 </h3>
                                 <p>
@@ -148,7 +169,7 @@ export default async function DashboardPage() {
                                 </p>
                             </div>
                             <div>
-                                <h3 className="text-xl font-semibold text-emerald-700 dark:text-emerald-400 mb-2">
+                                <h3 className="text-xl font-semibold text-accent mb-2">
                                     4. Scoring
                                 </h3>
                                 <p>
@@ -159,6 +180,6 @@ export default async function DashboardPage() {
                     </div>
                 </div>
             </div>
-        </ActiveRoomChecker >
+        </ActiveRoomChecker>
     );
 }

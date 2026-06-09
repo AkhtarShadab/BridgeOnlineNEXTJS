@@ -233,6 +233,11 @@ export class VoiceManager {
         const pc = this.createPeerConnection(fromUserId);
 
         try {
+            // Polite peer: if both sides initiated simultaneously, rollback our
+            // own offer before accepting the remote one to avoid "wrong state" error.
+            if (pc.signalingState !== "stable") {
+                await pc.setLocalDescription({ type: "rollback" });
+            }
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);

@@ -1,0 +1,290 @@
+/* ============================================================
+   playing-table.css — styles for <PlayingTable />
+   Ported from the POV prototype. All classes are prefixed `bt-`
+   to avoid collisions with your Tailwind / global styles.
+
+   The component reads a handful of CSS variables; defaults are set
+   on .bt-stage below, but they fall back to your design tokens
+   (--accent, --surface, --suit-red, …) when those exist, so the
+   table inherits your theme automatically.
+   ============================================================ */
+
+.bt-stage {
+  /* ---- tunables (override per-instance via inline style if you like) ---- */
+  --bt-card-w: 92px;
+  --bt-card-h: 130px;
+  --bt-tilt: 52deg;          /* table rake; drive from a prop */
+  --bt-persp: 1500px;
+  --bt-speed: 1;             /* animation speed multiplier */
+  --bt-fit: 1;               /* set by the component to fit its box */
+  --bt-handfit: 1;
+
+  /* ---- theme hooks: use your tokens if present, else these fallbacks ---- */
+  --bt-accent: var(--accent, #38bdf8);
+  --bt-glow: var(--glow, rgba(56, 189, 248, 0.45));
+  --bt-suit-red: var(--suit-red, #c8102e);
+  /* Card face uses #1a1a1a for black suits (spades/clubs), not --suit-black which
+     is a light gray token designed for the dark UI background — invisible on cream cards. */
+  --bt-suit-black: #1a1a1a;
+  --bt-text: var(--foreground, #e8eef6);
+  --bt-text-muted: var(--text-muted, #8aa0b8);
+  --bt-border: var(--border, rgba(255, 255, 255, 0.12));
+  --bt-felt-1: #0c1c34;
+  --bt-felt-2: #123a5e;
+
+  position: relative;
+  width: 100%;
+  height: clamp(600px, 85vh, 960px);
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 50% 8%, var(--bt-felt-1) 0%, #050a14 60%, #02050c 100%);
+  user-select: none;
+}
+
+/* ---- the tilted table ---- */
+.bt-scene {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1120px;
+  height: 700px;
+  margin-left: -560px;
+  margin-top: -350px;
+  transform: translateY(-2%) scale(var(--bt-fit));
+  transform-style: preserve-3d;
+  perspective: var(--bt-persp);
+  perspective-origin: 50% 34%;
+}
+.bt-table {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 880px;
+  height: 560px;
+  margin-left: -440px;
+  margin-top: -280px;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--bt-tilt));
+  border-radius: 50% / 46%;
+}
+.bt-table::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50% / 46%;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6);
+}
+.bt-felt {
+  position: absolute;
+  inset: 0;
+  border-radius: 50% / 46%;
+  background:
+    radial-gradient(120% 120% at 50% 35%, var(--bt-felt-2) 0%, #0b2a47 55%, #07182c 100%);
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.04);
+}
+
+/* ============================================================ SEATS */
+/* ============================================================ SCOREBOARD */
+.bt-scoreboard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotateX(calc(-1 * var(--bt-tilt))) translateZ(80px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: rgba(8, 16, 28, 0.72);
+  border: 1px solid var(--bt-border);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  z-index: 35;
+}
+.bt-score-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bt-score-team {
+  font: 700 11px "Inter", system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.bt-score-ns { color: var(--bt-accent); }
+.bt-score-ew { color: var(--bt-suit-red); }
+.bt-score-val {
+  font: 800 18px "Inter", system-ui, sans-serif;
+  color: var(--bt-text);
+  min-width: 20px;
+  text-align: center;
+}
+.bt-score-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--bt-border);
+}
+
+.bt-seat { position: absolute; width: 0; height: 0; transform-style: preserve-3d; }
+.bt-seat-plate {
+  position: absolute; left: 0; top: 0;
+  transform: translate(-50%, -50%) rotateX(calc(-1 * var(--bt-tilt)));
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 12px 6px 6px;
+  background: rgba(8, 16, 28, 0.72);
+  border: 1px solid var(--bt-border);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+.bt-seat.active .bt-seat-plate {
+  border-color: var(--bt-accent);
+  box-shadow: 0 0 22px var(--bt-glow);
+}
+.bt-seat-pos-top    { left: 50%; top: 56px; }
+.bt-seat-pos-bottom { left: 50%; top: calc(100% - 40px); }
+.bt-seat-pos-right  { left: calc(100% - 96px); top: 50%; }
+.bt-seat-pos-left   { left: 96px; top: 50%; }
+.bt-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 700 13px/1 "Inter", system-ui, sans-serif;
+  color: #06121f;
+  background: linear-gradient(180deg, #cfe3f6, #8fb6da);
+}
+.bt-avatar.ew { background: linear-gradient(180deg, #f6d7cf, #dba18f); }
+.bt-avatar.dummy-tag { box-shadow: 0 0 0 2px var(--bt-accent); }
+.bt-seat-meta { display: flex; flex-direction: column; line-height: 1.15; }
+.bt-seat-name { font: 600 13px "Inter", sans-serif; color: var(--bt-text); }
+.bt-seat-sub  { font: 500 10px "Inter", sans-serif; color: var(--bt-text-muted); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ============================================================ CARDS */
+.bt-card {
+  position: absolute;
+  width: var(--bt-card-w);
+  height: var(--bt-card-h);
+  border-radius: 9px;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.bt-card-face, .bt-card-back {
+  position: absolute; inset: 0;
+  border-radius: 9px;
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+.bt-card-face {
+  background: linear-gradient(180deg, #fbfaf6 0%, #f1ece0 100%);
+  border: 1px solid #d9d2c4;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: var(--bt-suit-black);
+  display: flex; flex-direction: column;
+  padding: 7px 8px;
+}
+.bt-card-back {
+  transform: rotateY(180deg);
+  background: linear-gradient(135deg, #0b2240 0%, #123a5e 50%, #0b2240 100%);
+  border: 1px solid #1e3a5f;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5), inset 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+.bt-card-back::before {
+  content: ""; position: absolute; inset: 6px; border-radius: 5px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 6px, rgba(56, 189, 248, 0.10) 6px 7px),
+    repeating-linear-gradient(-45deg, transparent 0 6px, rgba(56, 189, 248, 0.10) 6px 7px);
+}
+.bt-card.is-down .bt-card-face { transform: rotateY(180deg); }
+.bt-card.is-down .bt-card-back { transform: rotateY(0deg); }
+
+.bt-corner { display: flex; flex-direction: column; align-items: center; line-height: 0.92; font-weight: 800; }
+.bt-corner.tr { align-self: flex-end; transform: rotate(180deg); }
+.bt-rank { font: 800 21px "Inter", sans-serif; letter-spacing: -0.04em; }
+.bt-pip-sm { font-size: 16px; margin-top: -1px; }
+.bt-card-center { flex: 1; display: grid; place-items: center; font-size: 40px; }
+.bt-red { color: var(--bt-suit-red); }
+.bt-black { color: var(--bt-suit-black); }
+
+.bt-card.playable { cursor: pointer; }
+.bt-card.legal .bt-card-face {
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    0 0 0 2px var(--bt-accent),
+    0 0 22px var(--bt-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.bt-card.illegal { filter: brightness(0.62) saturate(0.7); }
+
+/* ============================================================ YOUR HAND (bottom) */
+.bt-hand {
+  position: absolute;
+  left: 50%;
+  bottom: 100px;
+  width: 0; height: 0;
+  z-index: 45;
+  transform: translateX(-50%) scale(var(--bt-handfit));
+  transform-origin: bottom center;
+  transform-style: preserve-3d;
+  perspective: 1300px;
+}
+.bt-hand .bt-card {
+  bottom: 0;
+  transform-origin: bottom center;
+  transition: transform calc(.28s / var(--bt-speed)) cubic-bezier(.22, .9, .3, 1);
+}
+
+/* ============================================================ DUMMY (top overlay — declarer POV) */
+.bt-dummy-hand {
+  position: absolute;
+  left: 50%;
+  top: 92px;
+  width: 0; height: 0;
+  z-index: 44;
+  transform: translateX(-50%) scale(calc(var(--bt-handfit) * .92));
+  transform-origin: top center;
+  transform-style: preserve-3d;
+  perspective: 1300px;
+}
+.bt-dummy-hand .bt-card {
+  top: 0;
+  transform-origin: top center;
+  transition: transform calc(.28s / var(--bt-speed)) cubic-bezier(.22, .9, .3, 1);
+}
+
+/* ============================================================ DUMMY (side — defender POV, display only) */
+.bt-side-dummy {
+  position: absolute;
+  width: 0; height: 0;
+  transform-style: preserve-3d;
+  transform: translateZ(60px) scale(.72);
+}
+.bt-side-dummy .bt-card {
+  left: 0; top: 0;
+  transition: transform calc(.25s / var(--bt-speed)) cubic-bezier(.22, .9, .3, 1);
+}
+
+/* ============================================================ OPPONENT BACKS */
+.bt-mini-fan { position: absolute; transform-style: preserve-3d; }
+.bt-mini-fan .bt-card { transform-origin: center bottom; }
+
+/* ============================================================ TRICK (center) */
+.bt-trick {
+  position: absolute;
+  left: 50%; top: 56%;
+  width: 0; height: 0;
+  transform-style: preserve-3d;
+  z-index: 30;
+}
+@keyframes bt-in-S { from { transform: translate(-50%, 240px) scale(1.4); opacity: 0; } }
+@keyframes bt-in-N { from { transform: translate(-50%, -240px) scale(1.4); opacity: 0; } }
+@keyframes bt-in-E { from { transform: translate(240px, 0) scale(1.4); opacity: 0; } }
+@keyframes bt-in-W { from { transform: translate(-240px, 0) scale(1.4); opacity: 0; } }
+.bt-card-inner { position: absolute; inset: 0; }
+.bt-anim-in-S { animation: bt-in-S calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
+.bt-anim-in-N { animation: bt-in-N calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
+.bt-anim-in-E { animation: bt-in-E calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
+.bt-anim-in-W { animation: bt-in-W calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bt-anim-in-S, .bt-anim-in-N, .bt-anim-in-E, .bt-anim-in-W { animation: none; }
+}

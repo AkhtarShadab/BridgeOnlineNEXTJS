@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { VoiceParticipant } from "@/lib/hooks/useVoiceChat";
+import { isEnabled } from "@/lib/features";
 
 interface PlayerVoiceBadgeProps {
     participant?: VoiceParticipant;
@@ -33,12 +34,13 @@ export default function PlayerVoiceBadge({ participant, isLocal }: PlayerVoiceBa
         }
     }, [volume]);
 
+    if (!isEnabled("voiceChat")) return null;
     if (!participant) return null;
 
     return (
         <div className="flex items-center gap-2 mt-1 relative">
             {/* Visual Speaking Indicator */}
-            <div className={`w-3 h-3 rounded-full transition-all duration-100 ${participant.isMuted ? 'bg-red-500' : participant.isSpeaking ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.7)] animate-pulse' : 'bg-gray-400'}`} title={participant.isMuted ? "Muted" : participant.isSpeaking ? "Speaking" : "Quiet"} />
+            <div className={`w-3 h-3 rounded-full transition-all duration-100 ${participant.isMuted ? 'bg-red-500' : participant.isSpeaking ? 'bg-green-400 shadow-[0_0_10px_rgba(74,222,128,0.7)] animate-pulse' : 'bg-text-muted'}`} title={participant.isMuted ? "Muted" : participant.isSpeaking ? "Speaking" : "Quiet"} />
 
             {!isLocal && (
                 <div className="relative flex items-center gap-2">
@@ -48,14 +50,14 @@ export default function PlayerVoiceBadge({ participant, isLocal }: PlayerVoiceBa
                                 audioRef.current?.play();
                                 setPlayError(false);
                             }}
-                            className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full animate-bounce"
+                            className="text-xs bg-accent/10 text-accent px-2 py-1 rounded-full animate-bounce"
                         >
                             Play Audio
                         </button>
                     )}
                     <button
                         onClick={(e) => { e.stopPropagation(); setShowSlider(!showSlider); }}
-                        className="text-gray-500 hover:text-emerald-600 focus:outline-none"
+                        className="text-text-muted hover:text-accent focus:outline-none"
                         title="Adjust Volume"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -68,15 +70,15 @@ export default function PlayerVoiceBadge({ participant, isLocal }: PlayerVoiceBa
                     </button>
 
                     {showSlider && (
-                        <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 w-32 flex flex-col gap-2"
+                        <div className="absolute top-full left-0 mt-2 bg-surface-elevated border border-border p-3 rounded-lg shadow-xl z-50 w-32 flex flex-col gap-2"
                             onClick={e => e.stopPropagation()}>
-                            <span className="text-xs text-gray-500 font-semibold mb-1">Volume: {Math.round(volume * 100)}%</span>
+                            <span className="text-xs text-text-muted font-semibold mb-1">Volume: {Math.round(volume * 100)}%</span>
                             <input
                                 type="range"
                                 min="0" max="1" step="0.05"
                                 value={volume}
                                 onChange={(e) => setVolume(parseFloat(e.target.value))}
-                                className="w-full accent-emerald-500"
+                                className="w-full accent-accent"
                             />
                         </div>
                     )}

@@ -74,7 +74,7 @@ export function validateBidAction(
                 return { valid: false, error: 'Bid already doubled/redoubled' };
             }
             // Can only double opponent's bid
-            const playerTeam = getPlayerTeam(action.player);
+            const playerTeam = action.seat ? getPlayerTeam(action.seat) : 'NS';
             if (playerTeam === lastBidTeam) {
                 return { valid: false, error: 'Cannot double own team' };
             }
@@ -88,7 +88,7 @@ export function validateBidAction(
                 return { valid: false, error: 'Already redoubled' };
             }
             // Can only redouble own team's bid
-            const team = getPlayerTeam(action.player);
+            const team = action.seat ? getPlayerTeam(action.seat) : 'NS';
             if (team !== lastBidTeam) {
                 return { valid: false, error: 'Cannot redouble opponent bid' };
             }
@@ -133,18 +133,18 @@ export function determineContract(bidHistory: BidAction[]): Contract | null {
 
     // Find who first bid this suit on the declaring team
     const contractSuit = lastBidAction.bid.suit;
-    const declarerTeam = getPlayerTeam(lastBidAction.player);
+    const declarerTeam = lastBidAction.seat ? getPlayerTeam(lastBidAction.seat) : 'NS';
 
     const firstBidder = bidHistory.find(action =>
         action.type === 'bid' &&
         action.bid?.suit === contractSuit &&
-        getPlayerTeam(action.player) === declarerTeam
+        (action.seat ? getPlayerTeam(action.seat) : 'NS') === declarerTeam
     );
 
     if (!firstBidder) return null;
 
     const declarer = firstBidder.player;
-    const dummy = getPartner(declarer);
+    const dummy = getPartnerId(declarer, bidHistory);
 
     return {
         ...lastBidAction.bid,
@@ -154,18 +154,56 @@ export function determineContract(bidHistory: BidAction[]): Contract | null {
 }
 
 /**
- * Get player's team (NS or EW)
+ * Get player's team (NS or EW) from seat.
+ * Seats: NORTH/SOUTH = NS team, EAST/WEST = EW team.
  */
-function getPlayerTeam(playerId: string): 'NS' | 'EW' {
-    // This is a simplified version - in reality you'd look up the player's seat
-    // For now, assume seat is encoded in playerId or passed separately
-    return 'NS'; // Placeholder
+const SEAT_TEAM: Record<string, 'NS' | 'EW'> = {
+    NORTH: 'NS',
+    SOUTH: 'NS',
+    EAST: 'EW',
+    WEST: 'EW',
+};
+
+function getPlayerTeam(seat: string): 'NS' | 'EW' {
+    return SEAT_TEAM[seat] ?? 'NS';
 }
 
 /**
- * Get player's partner ID
+ * Get partner seat for a given seat
  */
-function getPartner(playerId: string): string {
-    // Placeholder - would need actual seat/player mapping
-    return playerId;
+const PARTNER_SEAT: Record<string, string> = {
+    NORTH: 'SOUTH',
+    SOUTH: 'NORTH',
+    EAST: 'WEST',
+    WEST: 'EAST',
+};
+
+/**
+ * Reconstruct a seat→userId map from bidHistory so team/partner lookups
+ * work without requiring a separate player list lookup.
+ */
+function buildSeatMap(bidHistory: BidAction[]): Record<string, string> {
+    const seatMap: Record<string, string> = {};
+    for (const action of bidHistory) {
+        if (action.seat && action.player && !seatMap[action.seat]) {
+            seatMap[action.seat] = action.player;
+        }
+    }
+    return seatMap;
+}
+
+/**
+ * Get partner's userId from seat mapping
+ */
+function getPartnerId(playerId: string, bidHistory: BidAction[]): string {
+    // Find this player's seat from bid history
+    const action = bidHistory.find(a => a.player === playerId && a.seat);
+    if (!action?.seat) return playerId;
+
+    const partnerSeat = PARTNER_SEAT[action.seat];
+    if (!partnerSeat) return playerId;
+
+    // Find the player in that seat
+    const partnerAction = bidHistory.find(a => a.seat === partnerSeat);
+    return partnerAction?.player ?? playerId;
 }

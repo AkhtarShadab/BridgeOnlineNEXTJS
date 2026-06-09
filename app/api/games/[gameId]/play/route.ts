@@ -189,6 +189,14 @@ export async function POST(
                     },
                 });
 
+                // Broadcast game completion to all players
+                if (global.io) {
+                    const roomKey = `room-${game.gameRoom.id}`;
+                    const gameKey = `game-${gameId}`;
+                    global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
+                    global.io.to(roomKey).to(gameKey).emit('game:completed', { gameId, score });
+                }
+
                 return NextResponse.json({
                     success: true,
                     card,
@@ -196,6 +204,14 @@ export async function POST(
                     gameComplete: true,
                     score,
                 });
+            }
+
+            // Broadcast trick completion to all players
+            if (global.io) {
+                const roomKey = `room-${game.gameRoom.id}`;
+                const gameKey = `game-${gameId}`;
+                global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
+                global.io.to(roomKey).to(gameKey).emit('game:trick_completed', { gameId });
             }
         } else {
             gameState.currentTrick = currentTrick;
@@ -228,6 +244,13 @@ export async function POST(
                 sequenceNumber: (gameState.bidHistory?.length || 0) + tricks.length * 4 + currentTrick.length,
             },
         });
+
+        // Broadcast card play to all players
+        if (global.io) {
+            const roomKey = `room-${game.gameRoom.id}`;
+            const gameKey = `game-${gameId}`;
+            global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
+        }
 
         return NextResponse.json({
             success: true,

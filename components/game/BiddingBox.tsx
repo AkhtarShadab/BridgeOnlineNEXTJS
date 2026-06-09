@@ -25,11 +25,11 @@ interface BiddingBoxProps {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SUITS = [
-    { abbr: 'C', symbol: '♣', color: 'text-gray-800 dark:text-gray-200' },
-    { abbr: 'D', symbol: '♦', color: 'text-red-500' },
-    { abbr: 'H', symbol: '♥', color: 'text-red-500' },
-    { abbr: 'S', symbol: '♠', color: 'text-gray-800 dark:text-gray-200' },
-    { abbr: 'NT', symbol: 'NT', color: 'text-blue-600' },
+    { abbr: 'C', symbol: '♣', color: 'text-suit-black' },
+    { abbr: 'D', symbol: '♦', color: 'text-suit-red' },
+    { abbr: 'H', symbol: '♥', color: 'text-suit-red' },
+    { abbr: 'S', symbol: '♠', color: 'text-suit-black' },
+    { abbr: 'NT', symbol: 'NT', color: 'text-accent' },
 ] as const;
 
 const SUIT_ORDER = ['C', 'D', 'H', 'S', 'NT'];
@@ -174,11 +174,11 @@ function ScorePanel({
 
     if (!nsLastBid && !ewLastBid) {
         return (
-            <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-center">
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wide">
+            <div className="mb-4 p-3 bg-surface border border-border rounded-lg text-center">
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wide">
                     Score Calculator
                 </p>
-                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">
+                <p className="text-sm text-text-muted mt-1">
                     No bids yet — scores will appear here
                 </p>
             </div>
@@ -203,7 +203,7 @@ function ScorePanel({
 
     return (
         <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide text-center mb-2">
+            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide text-center mb-2">
                 Score Calculator
                 {modifier !== 'none' && (
                     <span className={`ml-2 px-1.5 py-0.5 rounded text-white text-xs ${modifier === 'doubled' ? 'bg-red-500' : 'bg-red-800'}`}>
@@ -220,41 +220,41 @@ function ScorePanel({
                             key={label}
                             className={`rounded-lg p-2 border ${bid
                                     ? vul
-                                        ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700'
-                                        : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700'
-                                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+                                        ? 'bg-red-900/20 border-red-700'
+                                        : 'bg-surface-elevated border-border'
+                                    : 'bg-surface border-border'
                                 }`}
                         >
                             <div className="flex items-center justify-between mb-1">
-                                <span className="font-bold text-sm text-slate-700 dark:text-slate-200">{label}</span>
+                                <span className="font-bold text-sm text-foreground">{label}</span>
                                 <div className="flex items-center gap-1">
                                     {mod === 'doubled' && <span className="text-xs bg-red-500 text-white px-1 rounded">X</span>}
                                     {mod === 'redoubled' && <span className="text-xs bg-red-800 text-white px-1 rounded">XX</span>}
-                                    {vul && <span className="text-xs text-red-500 font-semibold">VUL</span>}
+                                    {vul && <span className="text-xs text-red-400 font-semibold">VUL</span>}
                                 </div>
                             </div>
 
                             {!bid ? (
-                                <p className="text-xs text-slate-400 text-center py-1">—</p>
+                                <p className="text-xs text-text-muted text-center py-1">—</p>
                             ) : (
                                 <>
                                     <div className="flex items-center gap-1 mb-2">
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">Last bid:</span>
+                                        <span className="text-xs text-text-muted">Last bid:</span>
                                         <span className={`text-sm font-bold ${suitColor(bid.suit)}`}>
                                             {bid.level}{suitSymbol(bid.suit)}
                                         </span>
                                     </div>
                                     <div className="space-y-0.5">
                                         <div className="flex justify-between text-xs">
-                                            <span className="text-slate-600 dark:text-slate-400 font-medium">Made</span>
-                                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                                            <span className="text-text-muted font-medium">Made</span>
+                                            <span className="font-bold text-foreground">
                                                 {bridgeScore(bid.level, bid.suit, vul, 0, mod)}
                                             </span>
                                         </div>
                                         {Array.from({ length: maxOvertricks(bid.level) }, (_, i) => i + 1).map(ot => (
                                             <div key={ot} className="flex justify-between text-xs">
-                                                <span className="text-slate-500 dark:text-slate-500">+{ot}</span>
-                                                <span className="text-slate-700 dark:text-slate-300">
+                                                <span className="text-text-muted">+{ot}</span>
+                                                <span className="text-foreground">
                                                     {bridgeScore(bid.level, bid.suit, vul, ot, mod)}
                                                 </span>
                                             </div>
@@ -286,8 +286,8 @@ export default function BiddingBox({
         : { canDouble: false, canRedouble: false };
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4 text-center">
+        <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
+            <h2 className="text-2xl font-bold text-foreground mb-4 text-center">
                 Bidding Box
             </h2>
 
@@ -307,7 +307,7 @@ export default function BiddingBox({
             <div className="space-y-1 mb-6">
                 {LEVELS.map(level => (
                     <div key={level} className="grid grid-cols-6 gap-1 items-center">
-                        <div className="text-center font-bold text-gray-600 dark:text-gray-400 text-sm">
+                        <div className="text-center font-bold text-text-muted text-sm">
                             {level}
                         </div>
                         {SUITS.map(suit => {
@@ -322,16 +322,16 @@ export default function BiddingBox({
                                     className={`
                                         h-10 rounded-md font-bold text-base transition-all duration-150 border-2
                                         ${isCurrentBid
-                                            ? 'bg-amber-100 dark:bg-amber-800 border-amber-400 dark:border-amber-500 opacity-60 cursor-not-allowed'
+                                            ? 'bg-accent/10 border-accent opacity-60 cursor-not-allowed'
                                             : !valid
-                                                ? 'bg-gray-100 dark:bg-gray-700/40 border-gray-200 dark:border-gray-700 opacity-25 cursor-not-allowed'
+                                                ? 'bg-surface border-border opacity-25 cursor-not-allowed'
                                                 : disabled
-                                                    ? 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 opacity-50 cursor-not-allowed'
-                                                    : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 hover:border-emerald-500 hover:scale-105 cursor-pointer shadow-sm'
+                                                    ? 'bg-surface border-border opacity-50 cursor-not-allowed'
+                                                    : 'bg-surface border-border hover:bg-surface-elevated hover:border-accent hover:scale-105 cursor-pointer shadow-sm'
                                         }
                                     `}
                                 >
-                                    <span className={!valid ? 'text-gray-400 dark:text-gray-600' : suit.color}>
+                                    <span className={!valid ? 'text-text-muted opacity-50' : suit.color}>
                                         {suit.symbol}
                                     </span>
                                 </button>
@@ -383,7 +383,7 @@ export default function BiddingBox({
 
             {/* Contextual hint for double/redouble state */}
             {(canDouble || canRedouble) && !disabled && (
-                <p className="mt-2 text-xs text-center text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-xs text-center text-text-muted">
                     {canDouble && '💡 You may Double the opponent\'s bid'}
                     {canRedouble && '💡 You may Redouble (opponent doubled your team\'s bid)'}
                 </p>

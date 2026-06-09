@@ -84,16 +84,25 @@ export async function GET(
         const hands = gameState.hands || {};
         const playerHand = hands[playerSeat] || [];
 
+        // Determine declarer & dummy seats (needed by PlayingTable)
+        let declarerSeat: string | null = null;
+        let dummySeat: string | null = null;
+        const declarerPlayer = game.gamePlayers.find(p => p.userId === game.declarerId);
+        if (declarerPlayer) {
+            declarerSeat = declarerPlayer.seat;
+            dummySeat = getPartnerSeat(declarerSeat);
+        }
+
+        // Per-seat card counts for the table component (how many cards each player holds)
+        const handCounts: Record<string, number> = {};
+        for (const [seat, cards] of Object.entries(hands)) {
+            handCounts[seat] = (cards as string[]).length;
+        }
+
         // Get dummy hand if applicable (after first card played in PLAYING phase)
         let dummyHand = null;
-        if (game.phase === 'PLAYING' && gameState.currentTrick && gameState.currentTrick.length > 0) {
-            // Find dummy seat (partner of declarer)
-            const declarerPlayer = game.gamePlayers.find(p => p.userId === game.declarerId);
-            if (declarerPlayer) {
-                const declarerSeat = declarerPlayer.seat;
-                const dummySeat = getPartnerSeat(declarerSeat);
-                dummyHand = hands[dummySeat] || [];
-            }
+        if (game.phase === 'PLAYING' && gameState.currentTrick && gameState.currentTrick.length > 0 && dummySeat) {
+            dummyHand = hands[dummySeat] || [];
         }
 
         return NextResponse.json({
@@ -104,9 +113,12 @@ export async function GET(
             currentPlayer: game.currentPlayer,
             dealer: game.dealer,
             declarer: game.declarer,
+            declarerSeat,
+            dummySeat,
             playerSeat,
             hand: playerHand,
             dummyHand,
+            handCounts,
             bidHistory: gameState.bidHistory || [],
             currentBid: gameState.currentBid || null,
             currentTrick: gameState.currentTrick || [],
