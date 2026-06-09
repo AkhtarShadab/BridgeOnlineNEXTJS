@@ -9,7 +9,7 @@ export default function CreateRoomPage() {
     const { data: session, status } = useSession();
     const [roomName, setRoomName] = useState("");
     const [biddingSystem, setBiddingSystem] = useState("SAYC");
-    const [numBoards, setNumBoards] = useState(1);
+    const [numGames, setNumGames] = useState(1);
     const [timerEnabled, setTimerEnabled] = useState(true);
     const [timerDuration, setTimerDuration] = useState(90);
     const [loading, setLoading] = useState(false);
@@ -33,7 +33,7 @@ export default function CreateRoomPage() {
                     name: roomName,
                     settings: {
                         biddingSystem,
-                        numBoards,
+                        numBoards: numGames,
                         timerEnabled,
                         timerDuration,
                     },
@@ -106,15 +106,15 @@ export default function CreateRoomPage() {
                         </select>
                     </div>
 
-                    {/* Number of Boards */}
+                    {/* Number of Games */}
                     <div className="mb-6">
                         <label className="block text-foreground font-semibold mb-2">
-                            Number of Boards
+                            Number of Games
                         </label>
                         <input
                             type="number"
-                            value={numBoards}
-                            onChange={(e) => setNumBoards(parseInt(e.target.value) || 1)}
+                            value={numGames}
+                            onChange={(e) => setNumGames(parseInt(e.target.value) || 1)}
                             min={1}
                             max={10}
                             className="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-accent bg-surface-elevated text-foreground"

@@ -37,8 +37,9 @@ export async function GET(
                     },
                 },
                 gameRoom: {
-                    select: { id: true },
+                    select: { id: true, settings: true },
                 },
+                gameResult: true,
                 currentPlayer: {
                     select: {
                         id: true,
@@ -127,6 +128,9 @@ export async function GET(
             contract: gameState.contract,
             trumpSuit: gameState.trumpSuit,
             vulnerability: gameState.vulnerability || { NS: false, EW: false },
+            scoreNS: game.gameResult?.scoreNS ?? 0,
+            scoreEW: game.gameResult?.scoreEW ?? 0,
+            totalBoards: ((game.gameRoom as any)?.settings as any)?.numBoards ?? 1,
             players: game.gamePlayers.map(p => ({
                 userId: p.userId,
                 username: p.user.username,

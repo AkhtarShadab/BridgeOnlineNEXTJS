@@ -5,6 +5,8 @@ import { isValidPlay, determineTrickWinner } from '@/lib/game/playing';
 import type { Card } from '@/lib/constants/cards';
 import { GamePhase } from '@prisma/client';
 import { calculateScore } from '@/lib/game/scoring';
+import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
+import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
 import { z } from 'zod';
 
 const playCardSchema = z.object({
@@ -189,12 +191,25 @@ export async function POST(
                     },
                 });
 
+                // Check if there are more boards to play
+                const roomSettings = (game.gameRoom as any).settings ?? {};
+                const totalBoards = typeof roomSettings === 'object' ? (roomSettings as any).numBoards ?? 1 : 1;
+                const nextGameId = game.boardNumber < totalBoards
+                    ? await startNextBoard(game, game.gameRoom.id)
+                    : null;
+
                 // Broadcast game completion to all players
                 if (global.io) {
                     const roomKey = `room-${game.gameRoom.id}`;
                     const gameKey = `game-${gameId}`;
                     global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
-                    global.io.to(roomKey).to(gameKey).emit('game:completed', { gameId, score });
+                    global.io.to(roomKey).to(gameKey).emit('game:completed', {
+                        gameId,
+                        score,
+                        nextGameId,
+                        boardNumber: game.boardNumber,
+                        totalBoards,
+                    });
                 }
 
                 return NextResponse.json({
@@ -203,6 +218,9 @@ export async function POST(
                     trickComplete: true,
                     gameComplete: true,
                     score,
+                    nextGameId,
+                    boardNumber: game.boardNumber,
+                    totalBoards,
                 });
             }
 
@@ -332,4 +350,83 @@ function getVulnerability(boardNumber: number): { NS: boolean; EW: boolean } {
     if ([4, 7, 10, 13].includes(vuln)) return { NS: true, EW: true };
 
     return { NS: false, EW: false };
+}
+
+/**
+ * Create the next board/game in a multi-board match.
+ * Deals fresh cards, increments boardNumber, and links all players.
+ */
+async function startNextBoard(completedGame: any, roomId: string): Promise<string | null> {
+    try {
+        const nextBoardNumber = (completedGame.boardNumber ?? 1) + 1;
+        const dealer = getDealerForBoard(nextBoardNumber);
+        const vulnerability = calculateVulnerability(nextBoardNumber);
+
+        // Get current players in the room
+        const players = await prisma.gamePlayer.findMany({
+            where: { gameRoomId: roomId },
+        });
+        if (players.length !== 4) return null;
+
+        // Deal fresh cards
+        const deck = createDeck();
+        const shuffled = shuffleDeck(deck);
+        const hands = dealCards(shuffled);
+        const sortedHands = {
+            NORTH: sortHand(hands.NORTH).map(cardToString),
+            SOUTH: sortHand(hands.SOUTH).map(cardToString),
+            EAST: sortHand(hands.EAST).map(cardToString),
+            WEST: sortHand(hands.WEST).map(cardToString),
+        };
+
+        const dealerPlayer = players.find(p => p.seat === dealer);
+        if (!dealerPlayer) return null;
+
+        // Create new game record
+        const newGame = await prisma.game.create({
+            data: {
+                gameRoomId: roomId,
+                phase: GamePhase.BIDDING,
+                boardNumber: nextBoardNumber,
+                dealerId: dealerPlayer.userId,
+                currentPlayerId: dealerPlayer.userId,
+                gameState: {
+                    hands: sortedHands,
+                    currentBid: null,
+                    bidHistory: [],
+                    tricks: [],
+                    currentTrick: [],
+                    trumpSuit: null,
+                    contract: null,
+                    vulnerability,
+                    dealer,
+                    passCount: 0,
+                } as object,
+                deck: shuffled.map(cardToString),
+            },
+        });
+
+        // Link players to new game
+        await prisma.gamePlayer.updateMany({
+            where: { gameRoomId: roomId },
+            data: { gameId: newGame.id, isReady: false },
+        });
+
+        // Emit next board event
+        if (global.io) {
+            const roomKey = `room-${roomId}`;
+            const gameKey = `game-${completedGame.id}`;
+            global.io.to(roomKey).to(gameKey).emit('game:next_board', {
+                gameId: completedGame.id,
+                nextGameId: newGame.id,
+                boardNumber: nextBoardNumber,
+            });
+        }
+
+        console.log(`[PlayRoute] Next board ${nextBoardNumber} started: ${newGame.id}`);
+        return newGame.id;
+    } catch (error) {
+        console.error('[PlayRoute] Error starting next board:', error);
+        return null;
+    }
 }

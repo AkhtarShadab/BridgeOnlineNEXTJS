@@ -149,6 +149,36 @@ export default function GamePage() {
         return () => { socket.off('game:card_played', handleCardPlayed); };
     }, [socket, fetchGameState]);
 
+    // Listen for game completed — show score, then auto-redirect to next board if available
+    useEffect(() => {
+        if (!socket) return;
+        const handleCompleted = (data: { score: any; nextGameId?: string; boardNumber?: number }) => {
+            console.log('[Game] 🏁 game:completed received:', data);
+            fetchGameState();
+            // If next game exists, redirect after a brief delay to show results
+            if (data.nextGameId) {
+                setTimeout(() => {
+                    window.location.href = `/game/${data.nextGameId}`;
+                }, 3000);
+            }
+        };
+        socket.on('game:completed', handleCompleted);
+        return () => { socket.off('game:completed', handleCompleted); };
+    }, [socket, fetchGameState]);
+
+    // Listen for next board — redirect to the new game immediately
+    useEffect(() => {
+        if (!socket) return;
+        const handleNextBoard = (data: { nextGameId: string; boardNumber: number }) => {
+            console.log('[Game] 🎯 game:next_board received:', data);
+            if (data.nextGameId) {
+                router.push(`/game/${data.nextGameId}`);
+            }
+        };
+        socket.on('game:next_board', handleNextBoard);
+        return () => { socket.off('game:next_board', handleNextBoard); };
+    }, [socket, router]);
+
     // Flag set synchronously the moment the player clicks Exit.
     // Using a ref (not state) so changes are immediately visible inside the socket handler
     // without waiting for a re-render — avoids the race between socket event and navigation.
@@ -718,6 +748,46 @@ export default function GamePage() {
                                     }).then(fetchGameState);
                                 }}
                             />
+                        </div>
+                    );
+                })()}
+
+                {/* Completed phase — show score summary */}
+                {game.phase === 'COMPLETED' && (() => {
+                    const hasNextBoard = !!(game as any).nextGameId;
+                    return (
+                        <div className="bg-surface border border-border rounded-2xl shadow-xl p-8 text-center">
+                            <h2 className="text-3xl font-bold text-accent mb-4">🏁 Game Over</h2>
+                            <p className="text-lg text-foreground mb-2">
+                                Board {game.boardNumber} Complete
+                            </p>
+                            {(game as any).totalBoards && (
+                                <p className="text-sm text-text-muted mb-6">
+                                    Game {game.boardNumber} of {(game as any).totalBoards}
+                                </p>
+                            )}
+                            <div className="flex justify-center gap-12 mb-6">
+                                <div className="text-center">
+                                    <div className="text-sm font-semibold text-accent uppercase mb-1">NS</div>
+                                    <div className="text-3xl font-bold text-foreground">{(game as any).scoreNS ?? 0}</div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-sm font-semibold text-suit-red uppercase mb-1">EW</div>
+                                    <div className="text-3xl font-bold text-foreground">{(game as any).scoreEW ?? 0}</div>
+                                </div>
+                            </div>
+                            {hasNextBoard ? (
+                                <p className="text-sm text-accent animate-pulse">
+                                    ⏳ Next game starting shortly...
+                                </p>
+                            ) : (
+                                <button
+                                    onClick={() => router.push('/dashboard')}
+                                    className="px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent-muted transition-colors"
+                                >
+                                    Back to Dashboard
+                                </button>
+                            )}
                         </div>
                     );
                 })()}
