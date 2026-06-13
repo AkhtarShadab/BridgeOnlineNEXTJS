@@ -16,6 +16,13 @@ Tracks branch, flag, status, and dependencies.
 | 04 | AI post-game summary | `feat/ai-postgame-summary` | `FEATURE_AI_SUMMARY` | 📋 Planned | 00, 02 |
 | 05 | Playing table UI | `feat/playing-table` | — | ✅ Merged to master via PR #22 | 00, 01 |
 | 05b | Multi-board / next game | `master` (committed) | — | ✅ Implemented | 05 |
+| 06 | Trick lifecycle UX | `feat/trick-lifecycle` | — | 📋 Planned | 05 |
+| 07 | Play sync + optimistic state | `feat/play-sync` | — | 📋 Planned | 05, 06 |
+| 08 | Reconnection / disconnect UI | `feat/reconnection-ui` | `FEATURE_RECONNECT_GRACE` | 📋 Planned | 00 |
+| 09 | Mobile / touch support | `feat/mobile-touch` | — | 📋 Planned | 05, 01 |
+| 10 | Score depth & result screen | `feat/score-depth` | — | 📋 Planned | 05b |
+| 11 | Auction review during play | `feat/auction-review` | — | 📋 Planned | 05 |
+| 12 | Hint button UI | `feat/hint-button` | `FEATURE_AI_HINTS` | 📋 Planned | 02, 05 |
 
 ---
 
@@ -36,8 +43,9 @@ Tracks branch, flag, status, and dependencies.
 | Flag | Type | Default | Purpose |
 |---|---|---|---|
 | `voiceChat` | public | `true` | Toggle WebRTC voice UI + hook |
-| `aiHints` | server | `false` | Gate AI hint route (Feature 02) |
+| `aiHints` | server | `false` | Gate AI hint route + button (Features 02, 12) |
 | `newUI` | public | `false` | Toggle dark/premium theme (Feature 01) |
+| `reconnectGrace` | server | `false` | 30s disconnect grace window + UI banner (Feature 08) |
 
 ### Key design
 - `lib/features.ts` is the **only** file that reads `process.env.FEATURE_*` / `process.env.NEXT_PUBLIC_FEATURE_*`
@@ -186,6 +194,235 @@ After a game reaches `COMPLETED` phase, the play route checks `numBoards` in
 
 ---
 
+---
+
+## 06 — Trick lifecycle UX
+
+- **Branch:** `feat/trick-lifecycle` (not yet created)
+- **Flag:** None
+- **Status:** 📋 Planned
+- **Priority:** P0 — core gameplay feel
+
+### Problem
+The server emits `game:trick_completed` but the frontend never listens for it. Every event
+triggers a full `fetchGameState()`, which returns a state where the trick is already cleared.
+Players never see the completed 4-card trick, who won it, or any collection animation.
+
+### Scope
+| File | Change |
+|---|---|
+| `app/game/[gameId]/page.tsx` | Add `game:trick_completed` socket listener |
+| `app/game/[gameId]/page.tsx` | Local `completedTrick` state: hold 4 cards for ~1500ms before re-fetching |
+| `components/game/PlayingTable.tsx` | Accept `trickWinner?: Seat` prop — flash winner seat ring |
+| `components/game/PlayingTable.tsx` | CSS keyframe `bt-anim-collect-{N,E,S,W}`: cards slide toward winner |
+| `components/game/playing-table.css` | 4 directional collect keyframes |
+
+### Event payload (server already sends)
+```ts
+// game:trick_completed
+{ gameId: string; winningSeat: string; trickCards: { seat: string; card: string }[] }
+```
+
+### State machine in the page
+```
+trick_completed received
+  → setCompletedTrick({ cards, winner })   // hold for display
+  → setTimeout(1500, () => {
+      setCompletedTrick(null)
+      fetchGameState()                      // clears trick, updates counts
+    })
+```
+
+### Why not optimistic state here
+Trick winner requires trump/suit-follow logic; cheaper to let the server confirm and
+hold the completed trick visually for the delay window.
+
+---
+
+## 07 — Play sync + optimistic state
+
+- **Branch:** `feat/play-sync` (not yet created)
+- **Flag:** None
+- **Status:** 📋 Planned
+- **Priority:** P0 — UX latency + error handling
+- **Depends on:** 06 (trick lifecycle gives clean event payloads to act on)
+
+### Problem
+The current `onPlayCard` handler has no error handling — if the server rejects a play the
+card silently doesn't move. Also every socket event causes a full REST round-trip before the
+viewer sees their own card appear (~200ms+).
+
+### Scope
+| File | Change |
+|---|---|
+| `app/game/[gameId]/page.tsx` | Optimistic: add played card to `trick` state immediately on click |
+| `app/game/[gameId]/page.tsx` | On POST error: rollback optimistic trick, show toast with server error message |
+| `app/game/[gameId]/page.tsx` | Replace bare `.then(fetchGameState)` with try/catch + rollback |
+| `app/game/[gameId]/page.tsx` | Add `isSubmitting` flag to disable card clicks while POST is in-flight |
+| `components/game/PlayingTable.tsx` | Accept `isSubmitting?: boolean` prop — disable all clicks when true |
+
+### Optimistic flow
+```
+click legal card
+  → setOptimisticTrick([...trick, {seat: viewer, card}])
+  → setIsSubmitting(true)
+  → POST /api/games/:id/play
+      ok  → fetchGameState() (server state replaces optimistic)
+      err → rollback optimisticTrick, setIsSubmitting(false), toast(error)
+```
+
+### Toast system
+Add a minimal `useToast` hook (array of `{id, message, type}` in state, auto-dismiss 4s).
+Render a `ToastStack` overlay in game page. No external library needed.
+
+---
+
+## 08 — Reconnection / disconnect UI
+
+- **Branch:** `feat/reconnection-ui` (not yet created)
+- **Flag:** `FEATURE_RECONNECT_GRACE` / `NEXT_PUBLIC_FEATURE_RECONNECT_GRACE`
+- **Status:** 📋 Planned
+- **Priority:** P1 — game is unplayable when a seat silently vanishes
+
+### Problem
+The design doc specifies a 30s Redis reconnection grace window (P1 scalability item), but the
+game page has zero UI for it: no "opponent disconnected" banner, no grace countdown, and no
+indicator when the viewer's own socket drops.
+
+### Scope
+| File | Change |
+|---|---|
+| `lib/features.ts` | Add `reconnectGrace` flag |
+| `.env.example` | Document `FEATURE_RECONNECT_GRACE` |
+| `lib/socket/register-handlers.js` | Emit `game:player_disconnected` / `game:player_reconnected` with `{ userId, seat, graceEndsAt }` |
+| `server/index.js` | On socket `disconnect`: set Redis TTL key `player:disconnected:{userId}` = 30s; emit `game:player_disconnected` |
+| `server/index.js` | On socket reconnect (join-game event): clear key; emit `game:player_reconnected` |
+| `app/game/[gameId]/page.tsx` | Listen to both events; maintain `disconnectedPlayers: Map<seat, graceEndsAt>` state |
+| `components/game/DisconnectBanner.tsx` | New component: amber banner listing disconnected seats with live countdown |
+| `app/game/[gameId]/page.tsx` | Own-socket dropped indicator (socket `connect_error` / `disconnect` events) |
+
+### Banner design
+```
+⚠ East (Alice) disconnected — reconnecting… 00:24
+    [Waiting for reconnection]
+```
+If grace period expires without reconnect → full banner: "East left the game. Returning to lobby."
+
+---
+
+## 09 — Mobile / touch support
+
+- **Branch:** `feat/mobile-touch` (not yet created)
+- **Flag:** None
+- **Status:** 📋 Planned
+- **Priority:** P1 — design doc breakpoints are unimplemented
+
+### Problem
+`PlayingTable` uses `onMouseEnter`/`onMouseLeave` for card raise — hover doesn't exist on
+touch, so on mobile the first tap fires a play with no preview. The design doc specifies
+vertical layout, modal bid grid, and swipeable hand under 640px; none are implemented.
+
+### Scope
+| File | Change |
+|---|---|
+| `components/game/PlayingTable.tsx` | Two-tap selection: first tap → `selectedCard` state (raise) → second tap confirms → `onPlayCard` |
+| `components/game/PlayingTable.tsx` | Deselect on tap-outside via `useEffect` window listener |
+| `components/game/playing-table.css` | `@media (max-width: 640px)` — vertical stacked layout, `.bt-stage` height auto |
+| `components/game/BiddingBox.tsx` | `@media (max-width: 640px)` — render as bottom-sheet modal overlay |
+| `app/game/[gameId]/page.tsx` | `@media (max-width: 640px)` — single column, bid grid as modal triggered by floating button |
+| `components/game/PlayingTable.tsx` | Swipeable hand strip on mobile using CSS `scroll-snap-type: x mandatory` |
+
+### Touch card selection state machine
+```
+idle → tap legal card → selected (card raises, Cancel button appears)
+selected → tap same card → onPlayCard fired → idle
+selected → tap different legal card → new selection
+selected → tap cancel / tap outside → idle
+```
+
+---
+
+## 10 — Score depth & result screen
+
+- **Branch:** `feat/score-depth` (not yet created)
+- **Flag:** None
+- **Status:** 📋 Planned
+- **Priority:** P1 — current COMPLETED screen shows only raw NS/EW totals
+
+### Problem
+COMPLETED phase shows only `scoreNS` / `scoreEW`. Missing: contract result line,
+tricks taken vs. needed, vulnerability display during play, cumulative board scores,
+and `window.location.href` hard-reloads to next board instead of `router.push`.
+
+### Scope
+| File | Change |
+|---|---|
+| `app/api/games/[gameId]/route.ts` | Add `result` object to GET response: `{ contractMade, tricksNeeded, tricksTaken, overtricks, undertricks, points, doubled, redoubled }` |
+| `app/game/[gameId]/page.tsx` | Replace COMPLETED section with `<ScoreCard>` component |
+| `components/game/ScoreCard.tsx` | New component: contract line ("4♠ by South, made +1"), score breakdown, vulnerability indicator, board-N-of-M |
+| `components/game/ScoreCard.tsx` | Cumulative score table (all completed boards in session, pulled from `game.boardScores`) |
+| `app/api/games/[gameId]/route.ts` | Add `boardScores: { boardNumber, scoreNS, scoreEW, contract, result }[]` from game history |
+| `app/game/[gameId]/page.tsx` | Fix `window.location.href` → `router.push` for next board navigation |
+| `components/game/PlayingTable.tsx` | Vulnerability indicators on table felt (red corner flashes for NS/EW when vulnerable) |
+
+### Contract result line format
+```
+4♠ by South   made +1   +650   (NS vul)
+```
+Undertrick: `3NT by West   down 2   −200`
+
+---
+
+## 11 — Auction review during play
+
+- **Branch:** `feat/auction-review` (not yet created)
+- **Flag:** None
+- **Status:** 📋 Planned
+- **Priority:** P2 — UX polish
+
+### Problem
+Once PLAYING starts, the full auction table still renders above the 3D table, eating vertical
+space. Defenders need quick access to the auction; declarers less so. No compact contract chip
+sits on the table itself.
+
+### Scope
+| File | Change |
+|---|---|
+| `app/game/[gameId]/page.tsx` | During PLAYING phase, replace full auction panel with collapsible `<AuctionDrawer>` |
+| `components/game/AuctionDrawer.tsx` | New: compact contract chip (`4♠ · S · vul`) that expands to full bid table on click |
+| `components/game/PlayingTable.tsx` | Add `contract?: { level, suit, by: Seat, doubled?: boolean }` prop — render as center-felt chip |
+
+---
+
+## 12 — Hint button UI
+
+- **Branch:** `feat/hint-button` (not yet created)
+- **Flag:** `FEATURE_AI_HINTS` (same as Feature 02)
+- **Status:** 📋 Planned
+- **Priority:** P2 — API route already exists, UI is the only missing piece
+- **Depends on:** 02 (hint route implementation), 05
+
+### Problem
+`/api/games/[gameId]/hint` exists but nothing in the frontend calls it.
+
+### Scope
+| File | Change |
+|---|---|
+| `components/game/HintButton.tsx` | New: "Get Hint" button — disabled when not your turn, shows loading spinner, renders hint in expandable panel below hand |
+| `app/game/[gameId]/page.tsx` | Mount `<HintButton>` during BIDDING and PLAYING phases, gated on `isEnabled("aiHints")` |
+| `app/api/games/[gameId]/hint/route.ts` | Implement hint logic (Feature 02 scope) |
+
+### Component interface
+```tsx
+<HintButton
+  gameId={string}
+  disabled={!isMyTurn}
+  phase={"BIDDING" | "PLAYING"}
+/>
+```
+
+---
+
 ## Client vs Server state design
 
 | State | Owner | Why |
@@ -203,10 +440,21 @@ After a game reaches `COMPLETED` phase, the play route checks `numBoards` in
 | Table appearance settings | **Client** | localStorage — cosmetic only |
 | Current trick display | **Client** | Mapped from server state for animation |
 
-### Recovery design
+### Recovery design (current — pre Feature 07)
 Never optimistically update local state. Always:
 1. `POST /api/games/:id/play` → server validates & commits
 2. Server returns `{ success }` or `{ error }`
 3. Client calls `GET /api/games/:id` (re-fetch authoritative state)
 4. Server socket-broadcasts `game:card_played` to other players
 5. Other clients receive socket event → re-fetch
+
+### Recovery design (target — Feature 07)
+Viewer's own card is optimistically added to local trick state for immediate feedback.
+Server is still the single source of truth; optimistic state is replaced on re-fetch or
+rolled back on error.
+1. Click legal card → optimistically prepend `{seat: viewer, card}` to local trick state
+2. `POST /api/games/:id/play` in parallel
+3. **On success:** `GET /api/games/:id` replaces optimistic state with authoritative snapshot
+4. **On error:** rollback local trick state, show toast with server error message
+5. Server socket-broadcasts `game:card_played` to other players (unchanged)
+6. `game:trick_completed` → hold visual trick for 1500ms (Feature 06), then re-fetch
