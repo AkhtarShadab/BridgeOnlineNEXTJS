@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
 import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
+import BidDrawer from "@/components/game/BidDrawer";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
@@ -64,6 +65,16 @@ export default function GamePage() {
             return next;
         });
     };
+
+    // Feature 09: mobile / touch
+    const [isMobile, setIsMobile] = useState(false);
+    const [bidDrawerOpen, setBidDrawerOpen] = useState(false);
+    useEffect(() => {
+        const update = () => setIsMobile(window.innerWidth < 640);
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, []);
 
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
@@ -609,13 +620,37 @@ export default function GamePage() {
                             </div>
                         </div>
                         <div className="mt-6">
-                            <BiddingBox
-                                onBid={handleBid}
-                                currentBid={game.currentBid || null}
-                                bidHistory={game.bidHistory || []}
-                                vulnerability={game.vulnerability || { NS: false, EW: false }}
-                                playerSeat={game.playerSeat}
-                                disabled={!isMyTurn}
+                            {isMobile ? (
+                                <>
+                                    <button
+                                        data-testid="bid-fab"
+                                        onClick={() => setBidDrawerOpen(true)}
+                                        disabled={!isMyTurn}
+                                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 px-6 py-3 bg-accent text-background font-semibold rounded-full shadow-lg disabled:opacity-40"
+                                    >
+                                        ▲ Bid
+                                    </button>
+                                    <BidDrawer isOpen={bidDrawerOpen} onClose={() => setBidDrawerOpen(false)}>
+                                        <BiddingBox
+                                            onBid={(bid) => { handleBid(bid); setBidDrawerOpen(false); }}
+                                            currentBid={game.currentBid || null}
+                                            bidHistory={game.bidHistory || []}
+                                            vulnerability={game.vulnerability || { NS: false, EW: false }}
+                                            playerSeat={game.playerSeat}
+                                            disabled={!isMyTurn}
+                                        />
+                                    </BidDrawer>
+                                </>
+                            ) : (
+                                <BiddingBox
+                                    onBid={handleBid}
+                                    currentBid={game.currentBid || null}
+                                    bidHistory={game.bidHistory || []}
+                                    vulnerability={game.vulnerability || { NS: false, EW: false }}
+                                    playerSeat={game.playerSeat}
+                                    disabled={!isMyTurn}
+                                />
+                            )}
                             />
                         </div>
                     </>

@@ -299,24 +299,86 @@ function HandFan({ seat, cards, fanStyle, legal, interactive, onPlayCard }: {
   onPlayCard?: (seat: Seat, card: string) => void;
 }) {
   const n = cards.length;
+  // Feature 09: two-tap selection state for touch devices
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+
+  // Tap-outside clears selection (Feature 09 spec)
+  useEffect(() => {
+    if (!selectedCard) return;
+    const handler = (e: TouchEvent | MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('.bt-hand')) return; // tap inside hand, ignore
+      if (target.closest('[data-cancel-chip]')) return; // cancel chip click
+      setSelectedCard(null);
+    };
+    window.addEventListener('touchstart', handler);
+    window.addEventListener('mousedown', handler);
+    return () => {
+      window.removeEventListener('touchstart', handler);
+      window.removeEventListener('mousedown', handler);
+    };
+  }, [selectedCard]);
+
   return (
     <div className="bt-hand">
       {cards.map((card, i) => {
         const isLegal = !legal || legal.includes(card);
         const dim = interactive && legal != null && !legal.includes(card);
         const base = handTransform(i, n, fanStyle);
-        const clickable = interactive && isLegal;
+        const isSelected = selectedCard === card;
+        const isSelectable = interactive && isLegal;
+        const clickable = isSelectable && (selectedCard === null || isSelected);
+
+        const onTap = (e: React.SyntheticEvent) => {
+          if (!isSelectable) return;
+          e.preventDefault();
+          if (selectedCard === null) {
+            // first tap: select
+            setSelectedCard(card);
+          } else if (isSelected) {
+            // second tap on same card: confirm
+            setSelectedCard(null);
+            onPlayCard?.(seat, card);
+          } else {
+            // second tap on different card: switch selection
+            setSelectedCard(card);
+          }
+        };
+
         return (
           <div key={card}
-            className={`bt-card playable${interactive && isLegal ? " legal" : ""}${dim ? " illegal" : ""}`}
-            style={{ transform: base, zIndex: i }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = base + " translateY(-26px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = base; }}
-            onClick={() => clickable && onPlayCard?.(seat, card)}>
+            data-testid={`hand-card-${card}`}
+            data-selected={isSelected ? "true" : undefined}
+            className={`bt-card playable${isSelectable ? " legal" : ""}${dim ? " illegal" : ""}${isSelected ? " bt-card-selected" : ""}`}
+            style={{
+              transform: isSelected ? base + " translateY(-26px)" : base,
+              zIndex: isSelected ? 100 : i,
+              opacity: dim ? 0.5 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (!isSelected) e.currentTarget.style.transform = base + " translateY(-26px)";
+            }}
+            onMouseLeave={(e) => {
+              if (!isSelected) e.currentTarget.style.transform = base;
+            }}
+            onTouchStart={(e) => { e.preventDefault(); onTap(e); }}
+            onClick={(e) => onTap(e)}>
             <CardFace card={card} />
           </div>
         );
       })}
+
+      {selectedCard && (
+        <button
+          data-cancel-chip
+          data-testid="cancel-card-selection"
+          onClick={() => setSelectedCard(null)}
+          className="absolute -top-10 left-1/2 -translate-x-1/2 px-3 py-1 text-xs bg-surface-elevated border border-border text-text-muted rounded-full hover:text-foreground"
+        >
+          ✕ Cancel
+        </button>
+      )}
     </div>
   );
 }
@@ -327,23 +389,74 @@ function DummyFan({ seat, cards, fanStyle, legal, interactive, onPlayCard }: {
   onPlayCard?: (seat: Seat, card: string) => void;
 }) {
   const n = cards.length;
+  // Feature 09: two-tap selection for dummy
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedCard) return;
+    const handler = (e: TouchEvent | MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('.bt-dummy-hand')) return;
+      if (target.closest('[data-cancel-chip]')) return;
+      setSelectedCard(null);
+    };
+    window.addEventListener('touchstart', handler);
+    window.addEventListener('mousedown', handler);
+    return () => {
+      window.removeEventListener('touchstart', handler);
+      window.removeEventListener('mousedown', handler);
+    };
+  }, [selectedCard]);
+
   return (
     <div className="bt-dummy-hand">
       {cards.map((card, i) => {
         const isLegal = legal && legal.includes(card);
         const base = dummyTransform(i, n, fanStyle);
-        const clickable = interactive && !!isLegal;
+        const isSelected = selectedCard === card;
+        const isSelectable = interactive && !!isLegal;
+        const clickable = isSelectable && (selectedCard === null || isSelected);
+
+        const onTap = (e: React.SyntheticEvent) => {
+          if (!isSelectable) return;
+          e.preventDefault();
+          if (selectedCard === null) {
+            setSelectedCard(card);
+          } else if (isSelected) {
+            setSelectedCard(null);
+            onPlayCard?.(seat, card);
+          } else {
+            setSelectedCard(card);
+          }
+        };
+
         return (
           <div key={card}
-            className={`bt-card${interactive ? " playable" : ""}${isLegal ? " legal" : interactive ? " illegal" : ""}`}
-            style={{ transform: base, zIndex: i }}
-            onMouseEnter={interactive ? (e) => { e.currentTarget.style.transform = base + " translateY(26px)"; e.currentTarget.style.zIndex = "60"; } : undefined}
-            onMouseLeave={interactive ? (e) => { e.currentTarget.style.transform = base; e.currentTarget.style.zIndex = String(i); } : undefined}
-            onClick={() => clickable && onPlayCard?.(seat, card)}>
+            data-testid={`dummy-card-${card}`}
+            data-selected={isSelected ? "true" : undefined}
+            className={`bt-card${isSelectable ? " playable legal" : ""}${isSelected ? " bt-card-selected" : ""}`}
+            style={{
+              transform: isSelected ? base + " translateY(26px)" : base,
+              zIndex: isSelected ? 60 : i,
+            }}
+            onMouseEnter={isSelectable ? (e) => { e.currentTarget.style.transform = base + " translateY(26px)"; e.currentTarget.style.zIndex = "60"; } : undefined}
+            onMouseLeave={isSelectable ? (e) => { e.currentTarget.style.transform = base; e.currentTarget.style.zIndex = String(i); } : undefined}
+            onTouchStart={(e) => { e.preventDefault(); onTap(e); }}
+            onClick={(e) => onTap(e)}>
             <CardFace card={card} />
           </div>
         );
       })}
+
+      {selectedCard && (
+        <button
+          data-cancel-chip
+          onClick={() => setSelectedCard(null)}
+          className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-3 py-1 text-xs bg-surface-elevated border border-border text-text-muted rounded-full hover:text-foreground"
+        >
+          ✕ Cancel
+        </button>
+      )}
     </div>
   );
 }

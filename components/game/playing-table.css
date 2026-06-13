@@ -288,3 +288,71 @@
 @media (prefers-reduced-motion: reduce) {
   .bt-anim-in-S, .bt-anim-in-N, .bt-anim-in-E, .bt-anim-in-W { animation: none; }
 }
+
+/* ============================================================ FEATURE 09: MOBILE/TABLET */
+@media (max-width: 640px) {
+  .bt-stage {
+    height: auto;
+    min-height: 420px;
+  }
+  .bt-hand {
+    left: 0;
+    right: 0;
+    bottom: 80px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x mandatory;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    transform: none;
+    padding: 0 16px;
+  }
+  .bt-hand .bt-card {
+    position: relative;
+    bottom: auto;
+    scroll-snap-align: center;
+    flex-shrink: 0;
+    transform: none !important;
+  }
+  .bt-hand .bt-card:hover {
+    transform: translateY(-12px) !important;
+  }
+  .bt-dummy-hand {
+    left: 0;
+    right: 0;
+    top: 80px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x mandatory;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    transform: none;
+    padding: 0 16px;
+  }
+  .bt-dummy-hand .bt-card {
+    position: relative;
+    top: auto;
+    scroll-snap-align: center;
+    flex-shrink: 0;
+    transform: none !important;
+  }
+  /* Hide cramped seat labels on tiny screens */
+  .bt-seat-pos-left .bt-seat-meta,
+  .bt-seat-pos-right .bt-seat-meta {
+    display: none;
+  }
+  .bt-seat-pos-left,
+  .bt-seat-pos-right {
+    transform: scale(0.8);
+  }
+  /* Compress scoreboard on small screens */
+  .bt-scoreboard {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+  .bt-score-val { font-size: 14px; }
+}
