@@ -62,10 +62,13 @@ export interface PlayingTableProps {
   /** Called with (seat, card) when the viewer clicks a legal card. */
   onPlayCard?: (seat: Seat, card: string) => void;
 
-  /** When set, flash this seat's ring as the trick winner. CSS class `bt-winner`. */
+  /** Feature 06: when set, flash this seat's ring as the trick winner. */
   trickWinner?: Seat | null;
-  /** Set to true while the played trick is sliding toward the winner (Feature 06). */
+  /** Feature 06: set to true while the played trick is sliding toward the winner. */
   trickCollecting?: boolean;
+
+  /** Feature 07: disable all card clicks + dim the hand while a play POST is in flight. */
+  isSubmitting?: boolean;
 
   fanStyle?: "fan" | "tilt" | "flat";
   /** Table rake in degrees (30–62 looks good). */
@@ -165,6 +168,7 @@ export default function PlayingTable(props: PlayingTableProps) {
     onPlayCard,
     trickWinner = null,
     trickCollecting = false,
+    isSubmitting = false,
     fanStyle = "fan",
     rake = 52,
     speed = 1,
@@ -291,7 +295,7 @@ export default function PlayingTable(props: PlayingTableProps) {
         cards={bySuit(hands[viewerSeat] ?? [])}
         fanStyle={fanStyle}
         legal={interactiveSeat === viewerSeat ? legalCards : null}
-        interactive={interactiveSeat === viewerSeat}
+        interactive={interactiveSeat === viewerSeat && !isSubmitting}
         onPlayCard={onPlayCard}
       />
 
@@ -302,7 +306,7 @@ export default function PlayingTable(props: PlayingTableProps) {
           cards={bySuit(hands[dummySeat] ?? [])}
           fanStyle={fanStyle}
           legal={interactiveSeat === dummySeat ? legalCards : null}
-          interactive={interactiveSeat === dummySeat}
+          interactive={interactiveSeat === dummySeat && !isSubmitting}
           onPlayCard={onPlayCard}
         />
       )}

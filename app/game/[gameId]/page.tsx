@@ -66,9 +66,6 @@ export default function GamePage() {
     };
 
     // Feature 06: held visual state for a completed trick (trick lifecycle UX).
-    // Holds the 4 cards + winner for ~1.5s so all players see who won before the
-    // table resets and the trick count updates. Trick clear happens via the
-    // normal fetchGameState() inside the timeout.
     const [completedTrick, setCompletedTrick] = useState<{
         cards: { seat: Seat; card: string }[];
         winner: Seat;
@@ -76,6 +73,43 @@ export default function GamePage() {
     const [trickCollecting, setTrickCollecting] = useState(false);
     const trickHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const collectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Feature 07: optimistic play + toast system
+    const [optimisticTrick, setOptimisticTrick] = useState<{ seat: Seat; card: string }[] | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [toasts, setToasts] = useState<{ id: string; message: string; type: 'error' | 'info' }[]>([]);
+    const addToast = (message: string, type: 'error' | 'info' = 'info') => {
+        const id = Math.random().toString(36).slice(2);
+        setToasts(t => [...t, { id, message, type }]);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
+    };
+
+    // handlePlayCard — async flow with optimistic state + error toast + rollback.
+    const handlePlayCard = async (seat: Seat, card: string) => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+        setOptimisticTrick(prev => [...(prev || []), { seat, card }]);
+        try {
+            const res = await fetch(`/api/games/${gameId}/play`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card }),
+            });
+            if (res.ok) {
+                await fetchGameState();
+                setOptimisticTrick(null);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setOptimisticTrick(null);
+                addToast(data.error || 'Illegal play', 'error');
+            }
+        } catch {
+            setOptimisticTrick(null);
+            addToast('Network error — try again', 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
@@ -786,23 +820,18 @@ export default function GamePage() {
                                     ...(dummyRevealed && game.dummyHand ? { [dummy]: game.dummyHand as string[] } : {}),
                                 }}
                                 handCounts={hCounts}
-                                trick={(completedTrick?.cards || trickCards) as any}
+                                trick={(optimisticTrick ?? (completedTrick?.cards as any) ?? trickCards) as any}
                                 trickWinner={completedTrick?.winner ?? null}
                                 trickCollecting={trickCollecting}
                                 turn={turnSeat}
                                 legalCards={legal}
+                                isSubmitting={isSubmitting}
                                 tricksWon={game.tricksWon ?? { NS: 0, EW: 0 }}
                                 names={seatNames}
                                 fanStyle={tableSettings.fanStyle}
                                 rake={tableSettings.rake}
                                 speed={tableSettings.speed}
-                                onPlayCard={(seat, card) => {
-                                    fetch(`/api/games/${gameId}/play`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ card }),
-                                    }).then(fetchGameState);
-                                }}
+                                onPlayCard={handlePlayCard}
                             />
                         </div>
                     );
@@ -847,6 +876,29 @@ export default function GamePage() {
                         </div>
                     );
                 })()}
+
+                {/* Feature 07: toast stack (bottom-right overlay) */}
+                <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" data-testid="toast-stack">
+                    {toasts.map(t => (
+                        <div
+                            key={t.id}
+                            data-testid={`toast-${t.type}`}
+                            className={`pointer-events-auto px-4 py-3 rounded-lg border shadow-lg text-sm min-w-[200px] max-w-sm ${t.type === 'error'
+                                ? 'bg-red-900/40 border-red-700 text-red-200'
+                                : 'bg-surface-elevated border-border text-foreground'
+                            }`}
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <span>{t.message}</span>
+                                <button
+                                    onClick={() => setToasts(arr => arr.filter(x => x.id !== t.id))}
+                                    className="text-text-muted hover:text-foreground shrink-0"
+                                    aria-label="Dismiss"
+                                >×</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
