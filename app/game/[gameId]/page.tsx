@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
 import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
+import DisconnectBanner, { type DisconnectedPlayer } from "@/components/game/DisconnectBanner";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
@@ -64,6 +65,10 @@ export default function GamePage() {
             return next;
         });
     };
+
+    // Feature 08: reconnection UI
+    const [disconnectedPlayers, setDisconnectedPlayers] = useState<DisconnectedPlayer[]>([]);
+    const [timedOutUserIds, setTimedOutUserIds] = useState<string[]>([]);
 
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
@@ -178,6 +183,46 @@ export default function GamePage() {
         socket.on('game:next_board', handleNextBoard);
         return () => { socket.off('game:next_board', handleNextBoard); };
     }, [socket, router]);
+
+    // Feature 08: reconnection / disconnect listeners
+    useEffect(() => {
+        if (!socket || !isEnabled("reconnectGrace")) return;
+
+        const handleDisconnected = (data: { userId: string; seat: string; username: string; graceEndsAt: number }) => {
+            console.log('[Game] game:player_disconnected received:', data);
+            setDisconnectedPlayers(prev => {
+                // Avoid duplicates
+                if (prev.some(p => p.userId === data.userId)) return prev;
+                return [...prev, { userId: data.userId, seat: data.seat, username: data.username, graceEndsAt: data.graceEndsAt }];
+            });
+            setTimedOutUserIds(prev => prev.filter(id => id !== data.userId));
+        };
+        const handleReconnected = (data: { userId: string; seat: string; username: string }) => {
+            console.log('[Game] game:player_reconnected received:', data);
+            setDisconnectedPlayers(prev => prev.filter(p => p.userId !== data.userId));
+            setTimedOutUserIds(prev => prev.filter(id => id !== data.userId));
+        };
+        const handleDisconnectTimeout = (data: { userId: string; seat: string }) => {
+            console.log('[Game] game:disconnect_timeout received:', data);
+            setTimedOutUserIds(prev => prev.includes(data.userId) ? prev : [...prev, data.userId]);
+            // After 3s, redirect to room lobby
+            setTimeout(() => {
+                if (game?.roomId) {
+                    router.push(`/room/${game.roomId}`);
+                }
+            }, 3000);
+        };
+
+        socket.on('game:player_disconnected', handleDisconnected);
+        socket.on('game:player_reconnected', handleReconnected);
+        socket.on('game:disconnect_timeout', handleDisconnectTimeout);
+
+        return () => {
+            socket.off('game:player_disconnected', handleDisconnected);
+            socket.off('game:player_reconnected', handleReconnected);
+            socket.off('game:disconnect_timeout', handleDisconnectTimeout);
+        };
+    }, [socket, router, game?.roomId]);
 
     // Flag set synchronously the moment the player clicks Exit.
     // Using a ref (not state) so changes are immediately visible inside the socket handler
@@ -446,6 +491,14 @@ export default function GamePage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Feature 08: reconnection banner (above turn indicator) */}
+                {isEnabled("reconnectGrace") && (
+                    <DisconnectBanner
+                        players={disconnectedPlayers}
+                        timedOutUserIds={timedOutUserIds}
+                    />
+                )}
 
                 {/* Turn indicator */}
                 <div
