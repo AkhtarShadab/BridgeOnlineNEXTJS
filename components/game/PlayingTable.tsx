@@ -62,6 +62,11 @@ export interface PlayingTableProps {
   /** Called with (seat, card) when the viewer clicks a legal card. */
   onPlayCard?: (seat: Seat, card: string) => void;
 
+  /** When set, flash this seat's ring as the trick winner. CSS class `bt-winner`. */
+  trickWinner?: Seat | null;
+  /** Set to true while the played trick is sliding toward the winner (Feature 06). */
+  trickCollecting?: boolean;
+
   fanStyle?: "fan" | "tilt" | "flat";
   /** Table rake in degrees (30–62 looks good). */
   rake?: number;
@@ -158,6 +163,8 @@ export default function PlayingTable(props: PlayingTableProps) {
     tricksWon = { NS: 0, EW: 0 },
     names = {},
     onPlayCard,
+    trickWinner = null,
+    trickCollecting = false,
     fanStyle = "fan",
     rake = 52,
     speed = 1,
@@ -218,8 +225,13 @@ export default function PlayingTable(props: PlayingTableProps) {
           {SEATS.map((s) => {
             const active = turn === s;
             const opp = s !== viewerSeat && s !== partnerSeat;
+            const isWinner = trickWinner === s;
             return (
-              <div key={s} className={`bt-seat bt-seat-pos-${screen[s]}${active ? " active" : ""}`}>
+              <div
+                key={s}
+                data-testid={`trick-winner-${s}`}
+                className={`bt-seat bt-seat-pos-${screen[s]}${active ? " active" : ""}${isWinner ? " bt-winner" : ""}`}
+              >
                 <div className="bt-seat-plate">
                   <div className={`bt-avatar${opp ? " ew" : ""}${dummyRevealed && s === dummySeat ? " dummy-tag" : ""}`}>{s}</div>
                   <div className="bt-seat-meta">
@@ -242,12 +254,17 @@ export default function PlayingTable(props: PlayingTableProps) {
           })}
 
           {/* the current trick */}
-          <div className="bt-trick">
+          <div className={`bt-trick${trickCollecting ? " bt-collecting" : ""}`}>
             {trick.map((p) => {
               const slot = screen[p.seat];
+              // When collecting, override the trick position with the winner's seat position
+              const winnerSlot = trickWinner ? screen[trickWinner] : slot;
+              const animClass = trickCollecting
+                ? `bt-anim-collect-${SLOT_ANIM[winnerSlot]}`
+                : `bt-anim-in-${SLOT_ANIM[slot]}`;
               return (
                 <div key={p.seat + p.card} className="bt-card" style={{ transform: TRICK_POS[slot] }}>
-                  <div className={`bt-card-inner bt-anim-in-${SLOT_ANIM[slot]}`}><CardFace card={p.card} /></div>
+                  <div className={`bt-card-inner ${animClass}`}><CardFace card={p.card} /></div>
                 </div>
               );
             })}

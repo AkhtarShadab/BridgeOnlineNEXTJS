@@ -65,6 +65,18 @@ export default function GamePage() {
         });
     };
 
+    // Feature 06: held visual state for a completed trick (trick lifecycle UX).
+    // Holds the 4 cards + winner for ~1.5s so all players see who won before the
+    // table resets and the trick count updates. Trick clear happens via the
+    // normal fetchGameState() inside the timeout.
+    const [completedTrick, setCompletedTrick] = useState<{
+        cards: { seat: Seat; card: string }[];
+        winner: Seat;
+    } | null>(null);
+    const [trickCollecting, setTrickCollecting] = useState(false);
+    const trickHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const collectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Use the persistent global socket — the same connection used in the lobby
     // so room membership is never lost between page navigations.
     const { socket, connected, joinGame } = useSocketContext();
@@ -178,6 +190,48 @@ export default function GamePage() {
         socket.on('game:next_board', handleNextBoard);
         return () => { socket.off('game:next_board', handleNextBoard); };
     }, [socket, router]);
+
+    // Feature 06: trick completed — hold the 4 cards visually, animate collection
+    // toward the winner, then re-fetch so the server's cleared trick state takes over.
+    useEffect(() => {
+        if (!socket) return;
+        const handleTrickCompleted = (data: { gameId: string; winningSeat: string; trickCards: { seat: string; card: string }[] }) => {
+            console.log('[Game] 🎴 game:trick_completed received:', data);
+            // Map full seat names to compact ones
+            const winner = FULL_TO_SEAT[data.winningSeat] as Seat;
+            const cards = (data.trickCards || []).map(t => ({
+                seat: FULL_TO_SEAT[t.seat] as Seat,
+                card: t.card,
+            }));
+            if (cards.length !== 4 || !winner) {
+                // malformed payload — just refetch
+                fetchGameState();
+                return;
+            }
+            setCompletedTrick({ cards, winner });
+            setTrickCollecting(true);
+
+            // Clear any existing hold timer
+            if (trickHoldTimerRef.current) clearTimeout(trickHoldTimerRef.current);
+            if (collectTimerRef.current) clearTimeout(collectTimerRef.current);
+
+            // After 600ms of collect animation, swap the view to the still-held cards
+            collectTimerRef.current = setTimeout(() => {
+                setTrickCollecting(false);
+            }, 600);
+            // After 1500ms total, clear the hold and refetch authoritative state
+            trickHoldTimerRef.current = setTimeout(() => {
+                setCompletedTrick(null);
+                fetchGameState();
+            }, 1500);
+        };
+        socket.on('game:trick_completed', handleTrickCompleted);
+        return () => {
+            socket.off('game:trick_completed', handleTrickCompleted);
+            if (trickHoldTimerRef.current) clearTimeout(trickHoldTimerRef.current);
+            if (collectTimerRef.current) clearTimeout(collectTimerRef.current);
+        };
+    }, [socket, fetchGameState]);
 
     // Flag set synchronously the moment the player clicks Exit.
     // Using a ref (not state) so changes are immediately visible inside the socket handler
@@ -732,7 +786,9 @@ export default function GamePage() {
                                     ...(dummyRevealed && game.dummyHand ? { [dummy]: game.dummyHand as string[] } : {}),
                                 }}
                                 handCounts={hCounts}
-                                trick={trickCards}
+                                trick={(completedTrick?.cards || trickCards) as any}
+                                trickWinner={completedTrick?.winner ?? null}
+                                trickCollecting={trickCollecting}
                                 turn={turnSeat}
                                 legalCards={legal}
                                 tricksWon={game.tricksWon ?? { NS: 0, EW: 0 }}

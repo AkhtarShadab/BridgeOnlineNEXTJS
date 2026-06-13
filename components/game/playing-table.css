@@ -285,6 +285,28 @@
 .bt-anim-in-E { animation: bt-in-E calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
 .bt-anim-in-W { animation: bt-in-W calc(.42s / var(--bt-speed)) cubic-bezier(.2, .8, .3, 1) both; }
 
+/* ============================================================ FEATURE 06: TRICK LIFECYCLE */
+@keyframes bt-collect-S { to { transform: translate(-50%, 320px) scale(0.4); opacity: 0; } }
+@keyframes bt-collect-N { to { transform: translate(-50%, -320px) scale(0.4); opacity: 0; } }
+@keyframes bt-collect-E { to { transform: translate(320px, 0) scale(0.4); opacity: 0; } }
+@keyframes bt-collect-W { to { transform: translate(-320px, 0) scale(0.4); opacity: 0; } }
+.bt-anim-collect-S { animation: bt-collect-S calc(.6s / var(--bt-speed)) cubic-bezier(.4, 0, .7, .3) forwards; }
+.bt-anim-collect-N { animation: bt-collect-N calc(.6s / var(--bt-speed)) cubic-bezier(.4, 0, .7, .3) forwards; }
+.bt-anim-collect-E { animation: bt-collect-E calc(.6s / var(--bt-speed)) cubic-bezier(.4, 0, .7, .3) forwards; }
+.bt-anim-collect-W { animation: bt-collect-W calc(.6s / var(--bt-speed)) cubic-bezier(.4, 0, .7, .3) forwards; }
+
+@keyframes bt-winner-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6), 0 0 22px rgba(251, 191, 36, 0.4); }
+  50%  { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0.2), 0 0 36px rgba(251, 191, 36, 0.6); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0), 0 0 22px rgba(251, 191, 36, 0.2); }
+}
+.bt-seat.bt-winner .bt-seat-plate {
+  border-color: #fbbf24;
+  animation: bt-winner-pulse .8s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .bt-anim-in-S, .bt-anim-in-N, .bt-anim-in-E, .bt-anim-in-W { animation: none; }
+  .bt-anim-in-S, .bt-anim-in-N, .bt-anim-in-E, .bt-anim-in-W,
+  .bt-anim-collect-S, .bt-anim-collect-N, .bt-anim-collect-E, .bt-anim-collect-W { animation: none; }
+  .bt-seat.bt-winner .bt-seat-plate { animation: none; }
 }
