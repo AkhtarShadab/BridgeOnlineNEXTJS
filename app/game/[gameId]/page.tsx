@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
 import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
+import HintButton from "@/components/game/HintButton";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
@@ -607,6 +608,9 @@ export default function GamePage() {
                                     <p className="text-text-muted">No cards in hand</p>
                                 )}
                             </div>
+                            {isEnabled("aiHints") && (
+                                <HintButton gameId={gameId} disabled={!isMyTurn} phase="BIDDING" />
+                            )}
                         </div>
                         <div className="mt-6">
                             <BiddingBox
@@ -748,6 +752,11 @@ export default function GamePage() {
                                     }).then(fetchGameState);
                                 }}
                             />
+                            {isEnabled("aiHints") && (
+                                <div className="mt-4">
+                                    <HintButton gameId={gameId} disabled={!isMyTurn} phase="PLAYING" />
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
