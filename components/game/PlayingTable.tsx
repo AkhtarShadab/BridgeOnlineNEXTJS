@@ -62,6 +62,12 @@ export interface PlayingTableProps {
   /** Called with (seat, card) when the viewer clicks a legal card. */
   onPlayCard?: (seat: Seat, card: string) => void;
 
+  /** Feature 10: vulnerability indicators on table felt (NS / EW). */
+  vulnerability?: { NS: boolean; EW: boolean } | null;
+
+  /** Feature 11: compact contract chip rendered on the felt center. */
+  contract?: { level: number; suit: string; doubled?: boolean; redoubled?: boolean } | null;
+
   fanStyle?: "fan" | "tilt" | "flat";
   /** Table rake in degrees (30–62 looks good). */
   rake?: number;
@@ -158,6 +164,8 @@ export default function PlayingTable(props: PlayingTableProps) {
     tricksWon = { NS: 0, EW: 0 },
     names = {},
     onPlayCard,
+    vulnerability = null,
+    contract = null,
     fanStyle = "fan",
     rake = 52,
     speed = 1,
@@ -252,6 +260,18 @@ export default function PlayingTable(props: PlayingTableProps) {
               );
             })}
           </div>
+
+          {/* Feature 11: compact contract chip on the felt center */}
+          {contract && (
+            <div className="bt-felt-contract" data-testid="felt-contract">
+              <span className={`bt-felt-contract-suit ${(contract.suit === 'H' || contract.suit === 'D') ? 'text-suit-red' : 'text-suit-black'}`}>
+                {contract.level}
+                {({S:'♠',H:'♥',D:'♦',C:'♣'} as Record<string,string>)[contract.suit] ?? contract.suit}
+              </span>
+              {contract.doubled && <span className="text-accent text-xs font-bold ml-1">x</span>}
+              {contract.redoubled && <span className="text-accent text-xs font-bold ml-1">xx</span>}
+            </div>
+          )}
 
           {/* tricks won scoreboard */}
           <div className="bt-scoreboard">

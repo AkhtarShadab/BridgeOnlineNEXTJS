@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import BiddingBox from "@/components/game/BiddingBox";
 import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
+import AuctionDrawer from "@/components/game/AuctionDrawer";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
@@ -466,73 +467,83 @@ export default function GamePage() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    {/* Bidding History — 4-column ACBL-style table */}
-                    <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
-                        <h2 className="text-xl font-semibold text-foreground mb-4">
-                            Auction
-                        </h2>
+                    {/* Auction: full table during BIDDING, collapsible drawer otherwise (Feature 11) */}
+                    {game.phase === 'BIDDING' ? (
+                        <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
+                            <h2 className="text-xl font-semibold text-foreground mb-4">
+                                Auction
+                            </h2>
 
-                        {game.bidHistory && game.bidHistory.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-center">
-                                    <thead>
-                                        <tr>
-                                            {orderedSeats.map((seat) => {
-                                                const player = seatToPlayer[seat];
-                                                const isDealer = seat === dealerSeat;
-                                                const isCurrent = player?.userId === game.currentPlayer?.id;
-                                                return (
-                                                    <th key={seat} className="pb-3">
-                                                        <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${isCurrent
-                                                            ? 'text-accent'
-                                                            : 'text-text-muted'
-                                                            }`}>
-                                                            {SEAT_LABEL[seat]} {isDealer && <span className="text-xs text-yellow-400">D</span>}
-                                                        </div>
-                                                        <div className={`text-sm font-semibold truncate max-w-[80px] mx-auto ${isCurrent
-                                                            ? 'text-accent'
-                                                            : 'text-foreground'
-                                                            }`}>
-                                                            {player?.username || '—'}
-                                                        </div>
-                                                        {isCurrent && (
-                                                            <div className="w-2 h-2 bg-accent rounded-full mx-auto mt-1 animate-pulse" />
-                                                        )}
-                                                    </th>
-                                                );
-                                            })}
-                                        </tr>
-                                        <tr>
-                                            {orderedSeats.map(seat => (
-                                                <td key={seat}>
-                                                    <div className="border-t border-border mb-2" />
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {bidRows.map((row, rowIdx) => (
-                                            <tr key={rowIdx}>
-                                                {orderedSeats.map((seat, colIdx) => {
-                                                    const seatColInOriginal = SEAT_ORDER.indexOf(seat);
-                                                    const action = row[seatColInOriginal];
+                            {game.bidHistory && game.bidHistory.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-center">
+                                        <thead>
+                                            <tr>
+                                                {orderedSeats.map((seat) => {
+                                                    const player = seatToPlayer[seat];
+                                                    const isDealer = seat === dealerSeat;
+                                                    const isCurrent = player?.userId === game.currentPlayer?.id;
                                                     return (
-                                                        <td key={seat} className="py-2 px-1 text-base">
-                                                            {action ? formatBid(action) : ''}
-                                                        </td>
+                                                        <th key={seat} className="pb-3">
+                                                            <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${isCurrent
+                                                                ? 'text-accent'
+                                                                : 'text-text-muted'
+                                                                }`}>
+                                                                {SEAT_LABEL[seat]} {isDealer && <span className="text-xs text-yellow-400">D</span>}
+                                                            </div>
+                                                            <div className={`text-sm font-semibold truncate max-w-[80px] mx-auto ${isCurrent
+                                                                ? 'text-accent'
+                                                                : 'text-foreground'
+                                                                }`}>
+                                                                {player?.username || '—'}
+                                                            </div>
+                                                            {isCurrent && (
+                                                                <div className="w-2 h-2 bg-accent rounded-full mx-auto mt-1 animate-pulse" />
+                                                            )}
+                                                        </th>
                                                     );
                                                 })}
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            <p className="text-text-muted text-sm text-center py-4">
-                                Auction not yet started
-                            </p>
-                        )}
-                    </div>
+                                            <tr>
+                                                {orderedSeats.map(seat => (
+                                                    <td key={seat}>
+                                                        <div className="border-t border-border mb-2" />
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {bidRows.map((row, rowIdx) => (
+                                                <tr key={rowIdx}>
+                                                    {orderedSeats.map((seat, colIdx) => {
+                                                        const seatColInOriginal = SEAT_ORDER.indexOf(seat);
+                                                        const action = row[seatColInOriginal];
+                                                        return (
+                                                            <td key={seat} className="py-2 px-1 text-base">
+                                                                {action ? formatBid(action) : ''}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <p className="text-text-muted text-sm text-center py-4">
+                                    Auction not yet started
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        <AuctionDrawer
+                            contract={game.contract}
+                            declarerSeat={game.contract ? (FULL_TO_SEAT[(game.players as any[])?.find((p: any) => p.userId === (game.declarer as any)?.id)?.seat] as Seat) : null}
+                            vulnerability={game.vulnerability}
+                            bidHistory={game.bidHistory || []}
+                            playerSeat={game.playerSeat}
+                        />
+                    )}
 
                     {/* Players at the table */}
                     <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
@@ -734,6 +745,7 @@ export default function GamePage() {
                                 handCounts={hCounts}
                                 trick={trickCards}
                                 turn={turnSeat}
+                                contract={game.contract}
                                 legalCards={legal}
                                 tricksWon={game.tricksWon ?? { NS: 0, EW: 0 }}
                                 names={seatNames}
