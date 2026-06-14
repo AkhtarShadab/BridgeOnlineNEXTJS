@@ -84,6 +84,7 @@
 }
 
 /* ============================================================ SEATS */
+
 /* ============================================================ VULNERABILITY (Feature 10) */
 .bt-vuln-marks {
   position: absolute;
@@ -109,6 +110,28 @@
 .bt-vuln-s { left: 50%; transform: translateX(-50%); bottom: 4%; top: auto; }
 .bt-vuln-e { right: 4%; }
 .bt-vuln-w { left: 4%; }
+
+/* ============================================================ FELT CONTRACT CHIP (Feature 11) */
+.bt-felt-contract {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  transform: translateX(-50%) rotateX(calc(-1 * var(--bt-tilt))) translateZ(60px);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px;
+  background: rgba(8, 16, 28, 0.78);
+  border: 1px solid var(--bt-border);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  z-index: 32;
+  pointer-events: none;
+}
+.bt-felt-contract-suit {
+  font: 800 18px "Inter", system-ui, sans-serif;
+  letter-spacing: -0.04em;
+}
 
 /* ============================================================ SCOREBOARD */
 .bt-scoreboard {
