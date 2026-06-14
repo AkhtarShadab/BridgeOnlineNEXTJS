@@ -743,6 +743,9 @@ export default function GamePage() {
                                     <p className="text-text-muted">No cards in hand</p>
                                 )}
                             </div>
+                            {isEnabled("aiHints") && (
+                                <HintButton gameId={gameId} disabled={!isMyTurn} phase="BIDDING" />
+                            )}
                         </div>
                         <div className="mt-6">
                             {isMobile ? (
@@ -907,6 +910,11 @@ export default function GamePage() {
                                 speed={tableSettings.speed}
                                 onPlayCard={handlePlayCard}
                             />
+                            {isEnabled("aiHints") && (
+                                <div className="mt-4">
+                                    <HintButton gameId={gameId} disabled={!isMyTurn} phase="PLAYING" />
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
