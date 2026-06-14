@@ -144,7 +144,7 @@ export function calculateScore(
     // Feature 10: build the full breakdown so ScoreCard can render details.
     const fullBreakdown: ScoreBreakdown = {
         tricksNeeded: requiredTricks,
-        tricksTaken,
+        tricksTaken: tricksWon,
         overtricks: overtricks > 0 ? overtricks : 0,
         undertricks: undertricks > 0 ? undertricks : 0,
         contractMade: overtricks >= 0,
