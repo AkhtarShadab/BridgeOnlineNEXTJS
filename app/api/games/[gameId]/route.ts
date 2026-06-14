@@ -40,6 +40,7 @@ export async function GET(
                     select: { id: true, settings: true },
                 },
                 gameResult: true,
+                gameMoves: { orderBy: { sequenceNumber: 'asc' } },
                 currentPlayer: {
                     select: {
                         id: true,
@@ -131,6 +132,11 @@ export async function GET(
             scoreNS: game.gameResult?.scoreNS ?? 0,
             scoreEW: game.gameResult?.scoreEW ?? 0,
             totalBoards: ((game.gameRoom as any)?.settings as any)?.numBoards ?? 1,
+            // Feature 10: per-board scores from completed games in same room
+            boardScores: await loadBoardScores(game.gameRoom.id, game.id),
+            result: game.gameResult?.detailedScoring
+                ? mapDetailedScoringToBreakdown(game.gameResult.detailedScoring)
+                : null,
             players: game.gamePlayers.map(p => ({
                 userId: p.userId,
                 username: p.user.username,
@@ -176,4 +182,77 @@ function calculateTricksWon(tricks: any[]): { NS: number; EW: number } {
     });
 
     return { NS, EW };
+}
+
+/**
+ * Feature 10: load all completed-board scores for the same room, ordered by
+ * board number. Used by ScoreCard to show session totals.
+ */
+async function loadBoardScores(roomId: string, currentGameId: string) {
+    const completedGames = await prisma.game.findMany({
+        where: {
+            gameRoomId: roomId,
+            phase: 'COMPLETED',
+        },
+        orderBy: { boardNumber: 'asc' },
+        include: { gameResult: true },
+    });
+    return completedGames.map((g) => {
+        const state = g.gameState as any;
+        const contract = state?.contract;
+        const overOrUnder = state?.tricksWon
+            ? (g.gameResult?.tricksWon ?? 0) - (contract?.level ?? 0) - 6
+            : 0;
+        return {
+            boardNumber: g.boardNumber,
+            scoreNS: g.gameResult?.scoreNS ?? 0,
+            scoreEW: g.gameResult?.scoreEW ?? 0,
+            contract: contract
+                ? {
+                      level: contract.level,
+                      suit: contract.suit,
+                      doubled: contract.doubled,
+                      redoubled: contract.redoubled,
+                  }
+                : null,
+            result: contract
+                ? {
+                      contractMade: overOrUnder >= 0,
+                      overtricks: overOrUnder > 0 ? overOrUnder : 0,
+                      undertricks: overOrUnder < 0 ? -overOrUnder : 0,
+                  }
+                : null,
+        };
+    });
+}
+
+/**
+ * Feature 10: hydrate the ScoreBreakdown from the stored detailedScoring.
+ * If the stored scoring is already a full breakdown, return it; otherwise
+ * build a minimal one from the integer totals.
+ */
+function mapDetailedScoringToBreakdown(detailed: any): any {
+    if (!detailed) return null;
+    // New shape: { result: ScoreBreakdown, breakdown, scoreNS, scoreEW }
+    if (detailed.result && typeof detailed.result === 'object') {
+        return detailed.result;
+    }
+    // Legacy shape: { breakdown, scoreNS, scoreEW } — derive minimal breakdown
+    const contractMade = (detailed.breakdown?.penalty ?? 0) === 0;
+    return {
+        contractMade,
+        tricksNeeded: 0,
+        tricksTaken: 0,
+        overtricks: detailed.breakdown?.overtricks ?? 0,
+        undertricks: contractMade ? 0 : Math.abs(detailed.breakdown?.overtricks ?? 0),
+        doubled: false,
+        redoubled: false,
+        trickScore: detailed.breakdown?.trickScore ?? 0,
+        overtrickBonus: 0,
+        gameBonus: detailed.breakdown?.gameBonus ?? 0,
+        slamBonus: detailed.breakdown?.slamBonus ?? 0,
+        doubleBonus: detailed.breakdown?.doubleBonus ?? 0,
+        penalty: detailed.breakdown?.penalty ?? 0,
+        points: (detailed.scoreNS ?? 0) > 0 ? detailed.scoreNS : -(detailed.scoreEW ?? 0),
+    };
 }

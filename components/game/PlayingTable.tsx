@@ -70,6 +70,9 @@ export interface PlayingTableProps {
   /** Feature 07: disable all card clicks + dim the hand while a play POST is in flight. */
   isSubmitting?: boolean;
 
+  /** Feature 10: vulnerability indicators on table felt (NS / EW). */
+  vulnerability?: { NS: boolean; EW: boolean } | null;
+
   fanStyle?: "fan" | "tilt" | "flat";
   /** Table rake in degrees (30–62 looks good). */
   rake?: number;
@@ -169,6 +172,7 @@ export default function PlayingTable(props: PlayingTableProps) {
     trickWinner = null,
     trickCollecting = false,
     isSubmitting = false,
+    vulnerability = null,
     fanStyle = "fan",
     rake = 52,
     speed = 1,
@@ -224,6 +228,24 @@ export default function PlayingTable(props: PlayingTableProps) {
       <div className="bt-scene">
         <div className="bt-table">
           <div className="bt-felt" />
+
+          {/* Feature 10: vulnerability indicators on table felt */}
+          {vulnerability && (vulnerability.NS || vulnerability.EW) && (
+            <div className="bt-vuln-marks" data-testid="vulnerability-marks">
+              {vulnerability.NS && (
+                <>
+                  <span className="bt-vuln-mark bt-vuln-mark-ns bt-vuln-n" data-testid="vuln-NS">VUL</span>
+                  <span className="bt-vuln-mark bt-vuln-mark-ns bt-vuln-s" data-testid="vuln-NS-s">VUL</span>
+                </>
+              )}
+              {vulnerability.EW && (
+                <>
+                  <span className="bt-vuln-mark bt-vuln-mark-ew bt-vuln-e" data-testid="vuln-EW-e">VUL</span>
+                  <span className="bt-vuln-mark bt-vuln-mark-ew bt-vuln-w" data-testid="vuln-EW-w">VUL</span>
+                </>
+              )}
+            </div>
+          )}
 
           {/* seats */}
           {SEATS.map((s) => {

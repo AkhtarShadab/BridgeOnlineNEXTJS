@@ -7,6 +7,9 @@ import BiddingBox from "@/components/game/BiddingBox";
 import PlayingTable, { FULL_TO_SEAT, type Seat } from "@/components/game/PlayingTable";
 import DisconnectBanner, { type DisconnectedPlayer } from "@/components/game/DisconnectBanner";
 import BidDrawer from "@/components/game/BidDrawer";
+import ScoreCard from "@/components/game/ScoreCard";
+import AuctionDrawer from "@/components/game/AuctionDrawer";
+import HintButton from "@/components/game/HintButton";
 import { useSocketContext } from "@/lib/context/SocketContext";
 import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
@@ -219,13 +222,13 @@ export default function GamePage() {
             // If next game exists, redirect after a brief delay to show results
             if (data.nextGameId) {
                 setTimeout(() => {
-                    window.location.href = `/game/${data.nextGameId}`;
+                    router.push(`/game/${data.nextGameId}`);
                 }, 3000);
             }
         };
         socket.on('game:completed', handleCompleted);
         return () => { socket.off('game:completed', handleCompleted); };
-    }, [socket, fetchGameState]);
+    }, [socket, fetchGameState, router]);
 
     // Listen for next board — redirect to the new game immediately
     useEffect(() => {
@@ -887,6 +890,7 @@ export default function GamePage() {
                                 isSubmitting={isSubmitting}
                                 tricksWon={game.tricksWon ?? { NS: 0, EW: 0 }}
                                 names={seatNames}
+                                vulnerability={game.vulnerability ?? null}
                                 fanStyle={tableSettings.fanStyle}
                                 rake={tableSettings.rake}
                                 speed={tableSettings.speed}
@@ -896,43 +900,23 @@ export default function GamePage() {
                     );
                 })()}
 
-                {/* Completed phase — show score summary */}
+                {/* Completed phase — show rich score card (Feature 10) */}
                 {game.phase === 'COMPLETED' && (() => {
                     const hasNextBoard = !!(game as any).nextGameId;
                     return (
-                        <div className="bg-surface border border-border rounded-2xl shadow-xl p-8 text-center">
-                            <h2 className="text-3xl font-bold text-accent mb-4">🏁 Game Over</h2>
-                            <p className="text-lg text-foreground mb-2">
-                                Board {game.boardNumber} Complete
-                            </p>
-                            {(game as any).totalBoards && (
-                                <p className="text-sm text-text-muted mb-6">
-                                    Game {game.boardNumber} of {(game as any).totalBoards}
-                                </p>
-                            )}
-                            <div className="flex justify-center gap-12 mb-6">
-                                <div className="text-center">
-                                    <div className="text-sm font-semibold text-accent uppercase mb-1">NS</div>
-                                    <div className="text-3xl font-bold text-foreground">{(game as any).scoreNS ?? 0}</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-sm font-semibold text-suit-red uppercase mb-1">EW</div>
-                                    <div className="text-3xl font-bold text-foreground">{(game as any).scoreEW ?? 0}</div>
-                                </div>
-                            </div>
-                            {hasNextBoard ? (
-                                <p className="text-sm text-accent animate-pulse">
-                                    ⏳ Next game starting shortly...
-                                </p>
-                            ) : (
-                                <button
-                                    onClick={() => router.push('/dashboard')}
-                                    className="px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent-muted transition-colors"
-                                >
-                                    Back to Dashboard
-                                </button>
-                            )}
-                        </div>
+                        <ScoreCard
+                            boardNumber={game.boardNumber}
+                            totalBoards={(game as any).totalBoards}
+                            scoreNS={(game as any).scoreNS ?? 0}
+                            scoreEW={(game as any).scoreEW ?? 0}
+                            result={(game as any).result ?? null}
+                            contract={game.contract}
+                            declarerName={game.declarer?.username}
+                            vulnerability={game.vulnerability}
+                            boardScores={(game as any).boardScores ?? []}
+                            hasNextBoard={hasNextBoard}
+                            onBackToDashboard={() => router.push('/dashboard')}
+                        />
                     );
                 })()}
 

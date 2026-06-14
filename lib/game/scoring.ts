@@ -7,6 +7,27 @@ export interface ContractScoring {
     redoubled: boolean;
 }
 
+/**
+ * Feature 10: full breakdown returned by calculateScore() so the ScoreCard
+ * can show the result line and per-line breakdown.
+ */
+export interface ScoreBreakdown {
+    tricksNeeded: number;
+    tricksTaken: number;
+    overtricks: number;
+    undertricks: number;
+    contractMade: boolean;
+    doubled: boolean;
+    redoubled: boolean;
+    trickScore: number;
+    overtrickBonus: number;
+    gameBonus: number;
+    slamBonus: number;
+    doubleBonus: number;
+    penalty: number;
+    points: number;            // signed: + for declarer, − for defenders
+}
+
 export interface ScoringResult {
     scoreNS: number;
     scoreEW: number;
@@ -18,6 +39,8 @@ export interface ScoringResult {
         doubleBonus: number;
         penalty: number;
     };
+    /** Feature 10: full breakdown (when generated from a finished contract). */
+    result?: ScoreBreakdown;
 }
 
 /**
@@ -118,9 +141,27 @@ export function calculateScore(
         }
     }
 
+    // Feature 10: build the full breakdown so ScoreCard can render details.
+    const fullBreakdown: ScoreBreakdown = {
+        tricksNeeded: requiredTricks,
+        tricksTaken,
+        overtricks: overtricks > 0 ? overtricks : 0,
+        undertricks: undertricks > 0 ? undertricks : 0,
+        contractMade: overtricks >= 0,
+        doubled: contract.doubled,
+        redoubled: contract.redoubled,
+        trickScore: breakdown.trickScore,
+        overtrickBonus: breakdown.overtricks,
+        gameBonus: breakdown.gameBonus,
+        slamBonus: breakdown.slamBonus,
+        doubleBonus: breakdown.doubleBonus,
+        penalty: breakdown.penalty,
+        points: score,
+    };
+
     return declarer === 'NS'
-        ? { scoreNS: score, scoreEW: 0, breakdown }
-        : { scoreNS: 0, scoreEW: score, breakdown };
+        ? { scoreNS: score, scoreEW: 0, breakdown, result: fullBreakdown }
+        : { scoreNS: 0, scoreEW: score, breakdown, result: fullBreakdown };
 }
 
 /**
