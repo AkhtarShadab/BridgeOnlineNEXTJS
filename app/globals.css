@@ -41,6 +41,125 @@ body {
   background: var(--background);
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Halo design system — scoped to outside-the-table navigation only.
+
+   Any page/section that opts in with `className="halo"` gets the Halo palette,
+   typography, and surface language. The token names below intentionally shadow
+   the app-wide tokens, so existing Tailwind utilities (bg-surface, text-accent,
+   border-border, …) automatically restyle to Halo within the scope.
+
+   The in-game table UI does NOT use this class, so it keeps its navy felt theme.
+   ────────────────────────────────────────────────────────────────────────── */
+.halo {
+  /* Neutral near-black substrate + three charcoal tiers */
+  --background: #0a0b0f;
+  --surface: #14151c;
+  --surface-elevated: #1e2029;
+  --border: #2a2d38;
+  --border-strong: #3a3d4a;
+
+  /* Foreground scale */
+  --foreground: #f2f4f8;
+  --text: #f2f4f8;
+  --text-muted: #9aa0ae;
+  --text-faint: #5c6170;
+
+  /* Single electric-indigo action colour + hover/pressed */
+  --accent: #5b6bff;
+  --accent-muted: #7886ff;
+  --primary-hover: #7886ff;
+  --primary-pressed: #4a59e6;
+
+  /* Signal colours (status only) */
+  --success: #2be08c;
+  --warning: #f5d547;
+  --info: #3dd7e5;
+  --error: #ff3a5c;
+
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* In-game table theme — re-declares the original navy tokens so the game
+   table keeps its existing look even though the <body> opts into Halo.
+   Applied by app/game/[gameId]/layout.tsx. */
+.table-theme {
+  --background: #050a14;
+  --foreground: #e2e8f0;
+  --surface: #0f1a2e;
+  --surface-elevated: #162035;
+  --border: #1e3a5f;
+  --accent: #38bdf8;
+  --accent-muted: #0ea5e9;
+  --felt: #0a1628;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --suit-red: #f87171;
+  --suit-black: #e2e8f0;
+  --team-ns: #38bdf8;
+  --team-ew: #a78bfa;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Numerics use the mono companion so figures align — Halo signature. */
+.halo .halo-metric,
+.halo [data-halo-metric] {
+  font-family: var(--font-mono), ui-monospace, "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Uppercase eyebrow label */
+.halo .halo-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Card surface: hairline border, no drop shadow — depth from tier + border. */
+.halo .halo-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.halo .halo-card-elevated {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+}
+
+/* Signal chip */
+.halo .halo-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(91, 107, 255, 0.12);
+  color: var(--primary-hover);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* Focus is the only state allowed to glow. */
+.halo a:focus-visible,
+.halo button:focus-visible,
+.halo input:focus-visible,
+.halo select:focus-visible,
+.halo textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(91, 107, 255, 0.35);
+  border-color: var(--accent);
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

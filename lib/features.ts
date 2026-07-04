@@ -6,7 +6,8 @@ const on = (v: string | undefined, fallback = false) =>
 export const features = {
   // voice UI is rendered in client components → read the public twin in the browser
   voiceChat: on(process.env.NEXT_PUBLIC_FEATURE_VOICE_CHAT ?? process.env.FEATURE_VOICE_CHAT, true),
-  aiHints:   on(process.env.FEATURE_AI_HINTS, false),   // server-side route gate (Feature 02)
+  // hint UI is rendered in a client component → read the public twin in the browser
+  aiHints:   on(process.env.NEXT_PUBLIC_FEATURE_AI_HINTS ?? process.env.FEATURE_AI_HINTS, false), // Feature 02/12
   newUI:     on(process.env.NEXT_PUBLIC_FEATURE_NEW_UI ?? process.env.FEATURE_NEW_UI, false), // Feature 01
   reconnectGrace: on(process.env.NEXT_PUBLIC_FEATURE_RECONNECT_GRACE ?? process.env.FEATURE_RECONNECT_GRACE, false), // Feature 08
 } as const;

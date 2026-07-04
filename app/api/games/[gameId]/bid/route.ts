@@ -205,11 +205,17 @@ export async function POST(
             contract,
         };
 
+        const finalCurrentPlayerId = biddingComplete 
+            ? (contract ? getPlayerToLeftOfDeclarer(game.gamePlayers, contract.declarer) : null) 
+            : nextPlayer?.userId || null;
+
+        console.log(`[BidRoute] Transitioning game ${gameId}: phase=${newPhase}, currentPlayerId=${finalCurrentPlayerId}, biddingComplete=${biddingComplete}`);
+
         await prisma.game.update({
             where: { id: gameId },
             data: {
                 gameState: updatedGameState,
-                currentPlayerId: biddingComplete ? (contract ? getPlayerToLeftOfDeclarer(game.gamePlayers, contract.declarer) : null) : nextPlayer?.userId,
+                currentPlayerId: finalCurrentPlayerId,
                 phase: newPhase,
                 declarerId: declarerId,
             },

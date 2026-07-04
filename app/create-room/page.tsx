@@ -68,7 +68,7 @@ export default function CreateRoomPage() {
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-2xl shadow-xl p-8">
+                <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-2xl  p-8">
                     {error && (
                         <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-400">
                             {error}
@@ -113,6 +113,7 @@ export default function CreateRoomPage() {
                         </label>
                         <input
                             type="number"
+                            data-testid="num-games"
                             value={numGames}
                             onChange={(e) => setNumGames(parseInt(e.target.value) || 1)}
                             min={1}

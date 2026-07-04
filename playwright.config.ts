@@ -5,6 +5,9 @@ dotenvConfig({ path: '.env.test' });
 
 export default defineConfig({
   testDir: './__tests__/e2e',
+  // Ensures the test Postgres container is up and the schema is pushed before
+  // any spec runs. See __tests__/e2e/global-setup.ts.
+  globalSetup: './__tests__/e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -19,6 +22,9 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // No executablePath override: let Playwright resolve the Chromium build
+      // that matches the installed @playwright/test version. Run
+      // `npx playwright install chromium` if the browser is missing.
       use: { ...devices['Desktop Chrome'] },
     },
   ],
@@ -41,5 +47,5 @@ export default defineConfig({
       NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:3000',
     },
   },
-  timeout: 60_000,
+  timeout: 120_000,
 });

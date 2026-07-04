@@ -90,6 +90,12 @@ export class VoiceManager {
     public async initializeAndJoin(roomId: string, peersInRoom: string[]) {
         if (this.localStream) return; // Guard against double initialization
         this.roomId = roomId;
+
+        if (process.env.NEXT_PUBLIC_DISABLE_VOICE === 'true') {
+            console.log("Voice system disabled via NEXT_PUBLIC_DISABLE_VOICE");
+            return;
+        }
+
         try {
             this.localStream = await navigator.mediaDevices.getUserMedia({
                 audio: {

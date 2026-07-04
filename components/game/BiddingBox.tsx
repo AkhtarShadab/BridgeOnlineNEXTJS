@@ -316,6 +316,7 @@ export default function BiddingBox({
                             return (
                                 <button
                                     key={`${level}-${suit.abbr}`}
+                                    data-testid={`bid-${level}-${suit.abbr}`}
                                     onClick={() => { if (valid) onBid({ type: 'bid', level, suit: suit.abbr }); }}
                                     disabled={disabled || !valid}
                                     title={!valid ? `${level}${suit.symbol} ≤ current bid` : `Bid ${level}${suit.symbol}`}
