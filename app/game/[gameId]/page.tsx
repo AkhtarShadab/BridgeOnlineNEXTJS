@@ -779,7 +779,6 @@ export default function GamePage() {
                                     disabled={!isMyTurn}
                                 />
                             )}
-                            />
                         </div>
                     </>
                 )}
@@ -804,7 +803,7 @@ export default function GamePage() {
                         ? (game.hand as string[]).filter((c: string) => {
                             const currentTrickArr = (game.currentTrick || []) as any[];
                             const trumpSuit = game.contract?.suit as any ?? null;
-                            return isValidPlay(c, game.hand as any, currentTrickArr, trumpSuit).valid;
+                            return isValidPlay(c as any, game.hand as any, currentTrickArr, trumpSuit).valid;
                         })
                         : null;
 

@@ -261,8 +261,8 @@ export default function RoomPage() {
     };
 
     const currentPlayer = room?.players.find(p => p.userId === session?.user?.id);
-    const allReady = room?.players.length >= 2 && room.players.every(p => p.isReady);
-    const enoughPlayers = room?.players.length === 4;
+    const allReady = (room?.players.length ?? 0) >= 2 && room!.players.every(p => p.isReady);
+    const enoughPlayers = (room?.players.length ?? 0) === 4;
 
     if (loading) {
         return (
@@ -278,7 +278,7 @@ export default function RoomPage() {
     if (error || !room) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
-                <div className="text-center bg-surface border border-border p-8 rounded-2xl shadow-xl">
+                <div className="text-center bg-surface border border-border p-8 rounded-2xl ">
                     <div className="text-4xl mb-4 text-red-500">⚠️</div>
                     <h2 className="text-2xl font-bold text-foreground mb-4">
                         {error || "Room not found"}
@@ -345,7 +345,7 @@ export default function RoomPage() {
         <div className="min-h-screen bg-background p-6">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="mb-6 bg-surface border border-border rounded-2xl shadow-xl p-6">
+                <div className="mb-6 bg-surface border border-border rounded-2xl  p-6">
                     <div className="flex justify-between items-start">
                         <div>
                             <h1 className="text-3xl font-bold text-accent mb-2">
@@ -396,7 +396,7 @@ export default function RoomPage() {
                 </div>
 
                 {/* Player Controls */}
-                <div className="bg-surface border border-border rounded-2xl shadow-xl p-6">
+                <div className="bg-surface border border-border rounded-2xl  p-6">
                     <div className="flex justify-between items-center">
                         <div>
                             <h2 className="text-xl font-semibold text-foreground mb-2">

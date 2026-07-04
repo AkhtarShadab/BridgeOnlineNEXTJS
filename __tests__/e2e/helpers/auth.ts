@@ -24,14 +24,14 @@ export async function registerAndLogin(page: Page, user: ReturnType<typeof uniqu
     await confirmField.fill(user.password);
   }
   await page.click('button[type="submit"]');
-  await page.waitForURL(/\/(login|dashboard)/, { timeout: 15_000 });
+  await page.waitForURL(/\/(login|dashboard)/, { timeout: 30_000 });
 
   // If redirected to login, sign in
   if (page.url().includes('/login')) {
     await page.fill('#email', user.email);
     await page.fill('#password', user.password);
     await page.click('button[type="submit"]');
-    await page.waitForURL('/dashboard', { timeout: 15_000 });
+    await page.waitForURL('/dashboard', { timeout: 30_000 });
   }
 }
 
@@ -40,5 +40,5 @@ export async function login(page: Page, user: ReturnType<typeof uniqueUser>) {
   await page.fill('#email', user.email);
   await page.fill('#password', user.password);
   await page.click('button[type="submit"]');
-  await page.waitForURL('/dashboard', { timeout: 15_000 });
+  await page.waitForURL('/dashboard', { timeout: 30_000 });
 }

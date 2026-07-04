@@ -11,7 +11,7 @@
    If your data uses "NORTH" etc., map with FULL_TO_SEAT below.
    ============================================================ */
 
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 // NOTE: import the stylesheet ONCE in app/layout.tsx (Next.js only allows global
 // CSS imports from the root layout):  import "@/components/game/playing-table.css";
 
@@ -171,7 +171,6 @@ export default function PlayingTable(props: PlayingTableProps) {
     tricksWon = { NS: 0, EW: 0 },
     names = {},
     onPlayCard,
-<<<<<<< HEAD
     trickWinner = null,
     trickCollecting = false,
     isSubmitting = false,

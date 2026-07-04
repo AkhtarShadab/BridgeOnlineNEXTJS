@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { ActiveRoomChecker } from "@/components/ActiveRoomChecker";
+import { prisma } from "@/lib/db";
+import { normalizeStats, winRatePct } from "@/lib/game/stats";
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -8,6 +10,16 @@ export default async function DashboardPage() {
     if (!session?.user) {
         redirect("/login");
     }
+
+    // Feature 14: real player stats for the signed-in user.
+    const userRow = session.user.id
+        ? await prisma.user.findUnique({
+              where: { id: session.user.id },
+              select: { stats: true },
+          })
+        : null;
+    const stats = normalizeStats(userRow?.stats);
+    const winRate = winRatePct(stats);
 
     return (
         <ActiveRoomChecker>
@@ -39,27 +51,37 @@ export default async function DashboardPage() {
                     {/* Stats strip */}
                     <div
                         data-testid="stats-strip"
-                        className="flex gap-8 items-center bg-surface/80 backdrop-blur-sm border border-border rounded-xl px-6 py-4 mb-8"
+                        className="flex gap-8 items-center bg-surface border border-border rounded-xl px-6 py-4 mb-8"
                     >
                         <div className="text-center">
-                            <div className="text-2xl font-bold text-accent">0</div>
-                            <div className="text-xs text-text-muted uppercase tracking-wide">Games Played</div>
+                            <div data-testid="games-played" className="halo-metric text-2xl font-bold text-accent">
+                                {stats.gamesPlayed}
+                            </div>
+                            <div className="halo-eyebrow mt-1">Games Played</div>
                         </div>
                         <div className="w-px h-8 bg-border" />
                         <div className="text-center">
-                            <div className="text-2xl font-bold text-accent">—</div>
-                            <div className="text-xs text-text-muted uppercase tracking-wide">Win Rate</div>
+                            <div data-testid="win-rate" className="halo-metric text-2xl font-bold text-accent">
+                                {winRate === null ? "—" : `${winRate}%`}
+                            </div>
+                            <div className="halo-eyebrow mt-1">Win Rate</div>
                         </div>
                         <div className="w-px h-8 bg-border" />
                         <div className="text-center">
-                            <div className="text-2xl font-bold text-accent">—</div>
-                            <div className="text-xs text-text-muted uppercase tracking-wide">Rank</div>
+                            <div
+                                data-testid="rank"
+                                className="halo-metric text-2xl font-bold text-accent"
+                                title="Rank arrives with the leaderboard feature"
+                            >
+                                —
+                            </div>
+                            <div className="halo-eyebrow mt-1">Rank</div>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* User Profile Card */}
-                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                        <div className="bg-surface border border-border p-6 rounded-2xl">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Your Profile
                             </h2>
@@ -74,7 +96,7 @@ export default async function DashboardPage() {
                         </div>
 
                         {/* Create Room Card */}
-                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                        <div className="bg-surface border border-border p-6 rounded-2xl">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 New Game
                             </h2>
@@ -90,7 +112,7 @@ export default async function DashboardPage() {
                         </div>
 
                         {/* Join Room Card */}
-                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                        <div className="bg-surface border border-border p-6 rounded-2xl">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Join Game
                             </h2>
@@ -106,7 +128,7 @@ export default async function DashboardPage() {
                         </div>
 
                         {/* Room Invitations Card */}
-                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                        <div className="bg-surface border border-border p-6 rounded-2xl">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Room Invitations
                             </h2>
@@ -115,14 +137,14 @@ export default async function DashboardPage() {
                             </p>
                             <a
                                 href="/invitations"
-                                className="inline-block w-full text-center px-6 py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors"
+                                className="inline-block w-full text-center px-6 py-3 bg-surface-elevated text-foreground font-semibold rounded-lg border border-[var(--border-strong)] hover:bg-border transition-colors"
                             >
                                 View Invitations
                             </a>
                         </div>
 
                         {/* Friends Card */}
-                        <div className="bg-surface/80 backdrop-blur-sm border border-border p-6 rounded-xl shadow-lg">
+                        <div className="bg-surface border border-border p-6 rounded-2xl">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Friends
                             </h2>
@@ -131,7 +153,7 @@ export default async function DashboardPage() {
                             </p>
                             <a
                                 href="/dashboard/friends"
-                                className="inline-block w-full text-center px-6 py-3 bg-team-ew text-background font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                                className="inline-block w-full text-center px-6 py-3 bg-surface-elevated text-foreground font-semibold rounded-lg border border-[var(--border-strong)] hover:bg-border transition-colors"
                             >
                                 View Friends
                             </a>
@@ -139,7 +161,7 @@ export default async function DashboardPage() {
                     </div>
 
                     {/* How to Play Section */}
-                    <div className="mt-12 bg-surface/80 backdrop-blur-sm border border-border p-8 rounded-xl shadow-lg">
+                    <div className="mt-12 bg-surface border border-border p-8 rounded-2xl">
                         <h2 className="text-3xl font-bold text-foreground mb-6">
                             How to Play
                         </h2>

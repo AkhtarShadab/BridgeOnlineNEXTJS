@@ -60,7 +60,7 @@ export default function RegisterPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-background">
-            <div className="w-full max-w-md p-8 bg-surface border border-border rounded-2xl shadow-xl">
+            <div className="w-full max-w-md p-8 bg-surface border border-border rounded-2xl ">
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-bold text-accent">
                         ♠ ♥ BridgeOnline ♦ ♣
@@ -155,7 +155,7 @@ export default function RegisterPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 px-4 bg-accent hover:bg-accent-muted disabled:opacity-50 text-background font-semibold rounded-lg transition-colors shadow-lg"
+                        className="w-full py-3 px-4 bg-accent hover:bg-accent-muted disabled:opacity-50 text-background font-semibold rounded-lg transition-colors "
                     >
                         {loading ? "Creating account..." : "Register"}
                     </button>

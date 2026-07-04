@@ -5,6 +5,7 @@ import { isValidPlay, determineTrickWinner } from '@/lib/game/playing';
 import type { Card } from '@/lib/constants/cards';
 import { GamePhase } from '@prisma/client';
 import { calculateScore } from '@/lib/game/scoring';
+import { applyBoardToStats, normalizeStats, winningSideOf, TEAM_OF_SEAT, type Seat } from '@/lib/game/stats';
 import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
 import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
 import { z } from 'zod';
@@ -160,7 +161,11 @@ export async function POST(
 
                 const score = calculateScore(contract, declarerTricks, declarerTeam, vulnerability);
 
-                // Create game result
+                const contractMade = declarerTricks >= contract.level + 6;
+
+                // Create game result. `statsApplied` marks that Feature 14 player
+                // stats were written for this board (belt-and-braces against any
+                // path that bypasses the PLAYING-phase guard above).
                 await prisma.gameResult.create({
                     data: {
                         gameId,
@@ -170,9 +175,21 @@ export async function POST(
                         tricksWon: declarerTricks,
                         scoreNS: score.scoreNS,
                         scoreEW: score.scoreEW,
-                        detailedScoring: score as object,
+                        detailedScoring: { ...(score as object), statsApplied: true },
                     },
                 });
+
+                // Feature 14: credit all four seated players' cumulative stats for
+                // this completed board. Idempotent by the PLAYING-phase guard — a
+                // retried completion is rejected with 400 before reaching here.
+                // Winner-positive: the winning side banks |score|, the losing side 0.
+                await updatePlayerStatsForBoard(
+                    game.gamePlayers,
+                    declarer?.seat as Seat | undefined,
+                    contractMade,
+                    score.scoreNS,
+                    score.scoreEW,
+                );
 
                 // Save final gameState (all 13 tricks + updated hands) and mark completed
                 const finalGameState = {
@@ -302,6 +319,59 @@ function getPartnerSeat(seat: string): string {
         WEST: 'EAST',
     };
     return partners[seat] || seat;
+}
+
+/**
+ * Feature 14: credit all four seated players' cumulative `User.stats` for one
+ * completed board, in a single transaction. Reads each player's current stats,
+ * applies the pure `applyBoardToStats` math, and writes the merged JSON back.
+ *
+ * gamesWon is attributed by the side that won the board (declaring side if the
+ * contract made, else defenders). totalScore uses **winner-positive** semantics:
+ * the winning side adds |score| (the magnitude of the board's score) and the
+ * losing side adds 0. This deliberately diverges from the raw scoreNS/scoreEW
+ * bucket convention in `lib/game/scoring.ts` (which puts the signed penalty in
+ * the declarer's bucket and 0 in the defenders' bucket on a set contract) so
+ * that a defender who sets a contract sees a positive score, not zero.
+ */
+async function updatePlayerStatsForBoard(
+    gamePlayers: { userId: string; seat: string }[],
+    declarerSeat: Seat | undefined,
+    contractMade: boolean,
+    scoreNS: number,
+    scoreEW: number,
+) {
+    const seated = gamePlayers.filter(
+        (p): p is { userId: string; seat: Seat } =>
+            !!p.userId && p.seat in TEAM_OF_SEAT,
+    );
+    if (seated.length === 0) return;
+
+    const winningSide = winningSideOf(
+        declarerSeat ? { declarer: declarerSeat } : null,
+        contractMade,
+    );
+
+    // One bucket is always 0 and the other holds the signed board score, so the
+    // sum of absolute values is the magnitude regardless of which side declared.
+    const scoreMagnitude = Math.abs(scoreNS) + Math.abs(scoreEW);
+
+    const users = await prisma.user.findMany({
+        where: { id: { in: seated.map((p) => p.userId) } },
+        select: { id: true, stats: true },
+    });
+    const statsById = new Map(users.map((u) => [u.id, normalizeStats(u.stats)]));
+
+    await prisma.$transaction(
+        seated.map((p) => {
+            const prev = statsById.get(p.userId) ?? { gamesPlayed: 0, gamesWon: 0, totalScore: 0 };
+            const next = applyBoardToStats(prev, p.seat, winningSide, scoreMagnitude);
+            return prisma.user.update({
+                where: { id: p.userId },
+                data: { stats: next },
+            });
+        }),
+    );
 }
 
 /**

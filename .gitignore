@@ -43,3 +43,6 @@ prisma/migrations/
 
 # Session logs (local only, not tracked in git)
 session-logs/
+
+# Claude Code local config (local only, not tracked in git)
+.claude/
