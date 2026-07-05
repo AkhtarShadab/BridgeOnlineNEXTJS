@@ -275,11 +275,13 @@ Implemented in `lib/queue/gameQueue.ts` (enqueue + `shouldUseQueue()` gate), `li
 ### 8.4 Reconnection Protocol (P1) ✅ Feature 17 (folds in #16 gap)
 On disconnect, set a 30s Redis TTL key (`game:disconnected:{userId}`). If player rejoins within grace period, clear the key and notify room. After 30s, keyspace notification fires `game:disconnect_timeout`. Implemented in `lib/socket/reconnect.ts` (`RedisReconnectManager` / `InMemoryReconnectManager`, selected by `isRedisConfigured()`). Cross-replica reconnect verified — a player disconnecting from server A and reconnecting to server B clears the shared Redis key.
 
-### 8.5 Service Separation (P2)
+### 8.5 Service Separation (P2) ✅ Feature 19
 Three independently deployable units sharing only Redis and PostgreSQL:
-- **Next.js** (stateless, Vercel/VPS)
-- **Socket.io server** (signaling + broadcast)
-- **Game Worker** (BullMQ consumer)
+- **Next.js** (stateless, Vercel/VPS) — `server/next.js` (`npm run start:web`)
+- **Socket.io server** (signaling + broadcast) — `server/socket.js` (`npm run start:socket`), Redis adapter + reconnection grace
+- **Game Worker** (BullMQ consumer) — `server/worker.js` (`npm run start:worker`), broadcasts via `lib/socket/emitter.ts` (broadcast-only, no listen)
+
+`server/index.js` remains as the all-in-one dev entry (`npm run dev`). Production runs the three split entries in separate containers. See `deploy/README.md` for the k8s manifest sketch, sticky-session ingress annotations, and replica guidance.
 
 ### 8.6 Dynamic TURN Credentials (P2)
 Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle.

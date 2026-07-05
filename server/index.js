@@ -5,7 +5,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { registerSocketHandlers } from '../lib/socket/register-handlers.js';
 import { isRedisConfigured, getPubClient, getSubClient, closeRedisClients } from '../lib/redis.ts';
-import { InMemoryReconnectManager, RedisReconnectManager, type ReconnectManager } from '../lib/socket/reconnect.ts';
+import { InMemoryReconnectManager, RedisReconnectManager } from '../lib/socket/reconnect.ts';
 import { isEnabled } from '../lib/features.ts';
 import { shouldUseQueue } from '../lib/queue/gameQueue.ts';
 
@@ -72,7 +72,7 @@ app.prepare().then(async () => {
     // restarts), falls back to the in-memory Map otherwise (Feature 08).
     // Both paths are additionally gated by FEATURE_RECONNECT_GRACE — if the
     // flag is off, no disconnect events are emitted at all.
-    let reconnectManager: ReconnectManager | null = null;
+    let reconnectManager = null;
     if (isEnabled('reconnectGrace')) {
         reconnectManager = isRedisConfigured()
             ? new RedisReconnectManager(getPubClient)
