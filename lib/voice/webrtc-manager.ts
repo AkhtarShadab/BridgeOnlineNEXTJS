@@ -26,7 +26,16 @@ export class VoiceManager {
         this.socket = socket;
         this.myUserId = userId;
 
-        // Setup STUN/TURN from env variables if available
+        // Feature 20: dynamic TURN credentials fetched from
+        // /api/voice/turn-credentials (HMAC-signed, short-lived). The static
+        // NEXT_PUBLIC_TURN_* env path is kept as a fallback for backwards
+        // compatibility but is deprecated — the dynamic route is preferred
+        // because it never ships TURN_SECRET to the client.
+        this.refreshTurnCredentials().catch((e) => {
+            console.warn('[VoiceManager] TURN credential fetch failed:', e);
+        });
+
+        // Legacy static TURN from env (deprecated, kept for compat)
         if (process.env.NEXT_PUBLIC_TURN_URL) {
             this.iceServers.push({
                 urls: process.env.NEXT_PUBLIC_TURN_URL,
@@ -36,6 +45,29 @@ export class VoiceManager {
         }
 
         this.setupSocketListeners();
+    }
+
+    /**
+     * Feature 20: fetch short-lived TURN credentials from the server and merge
+     * them into `iceServers`. Idempotent — safe to call repeatedly to refresh
+     * before expiry. The static STUN entries are kept; only the dynamic TURN
+     * entry is replaced.
+     */
+    public async refreshTurnCredentials(): Promise<void> {
+        try {
+            const res = await fetch('/api/voice/turn-credentials');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.iceServers || data.iceServers.length === 0) return;
+            // Replace any prior dynamic TURN entry; keep STUN.
+            this.iceServers = [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: "stun:stun1.l.google.com:19302" },
+                ...data.iceServers,
+            ];
+        } catch {
+            // Network error or route unavailable — keep current iceServers.
+        }
     }
 
     private setupSocketListeners() {
