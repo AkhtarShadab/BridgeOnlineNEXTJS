@@ -295,11 +295,12 @@ CREATE INDEX idx_game_moves_covering ON game_moves(game_id, sequence_number)
   INCLUDE (move_type, move_data);
 ```
 
-### 8.8 Observability (P3)
-- **Sentry** — game engine exceptions + socket errors
-- **Pino** — structured logs with `gameId`/`userId` on every line
-- **Prometheus + Grafana** — active connections, games/min, queue depth
-- **`/api/health`** — DB + Redis connectivity check for uptime monitoring
+### 8.8 Observability (P3) ✅ Feature 21
+- **Sentry** — `lib/observability/sentry.ts` + `instrumentation.ts`. No-op without `SENTRY_DSN`. `captureException` + `withSentry` wrapper.
+- **Pino** — `lib/observability/logger.ts`. JSON to stdout (prod) / pretty (dev). `gameLogger(gameId, userId, requestId)` child loggers. Redacts passwordHash/TURN_SECRET/password/credential.
+- **Prometheus** — `lib/observability/metrics.ts` (prom-client). `http_requests_total`, `http_request_duration_seconds`, `socket_connections_active`, `bullmq_jobs_*`, `games_completed_total`, process metrics. Scraped at `GET /api/metrics` (no auth — ingress allowlist required).
+- **`/api/health`** — DB + Redis connectivity, 200/503. k8s liveness + readiness probe target.
+- Grafana dashboards: `deploy/grafana/` (JSON to be added). Removed the stale Sentry template comment from `prisma/schema.prisma`.
 
 ### Priority Summary
 | Priority | Enhancement |

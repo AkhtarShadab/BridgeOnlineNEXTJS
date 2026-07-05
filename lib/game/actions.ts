@@ -17,6 +17,7 @@ import { isBiddingComplete, isPassedOut, determineContract, type BidAction } fro
 import { isValidPlay, determineTrickWinner } from './playing';
 import { calculateScore } from './scoring';
 import { applyBoardToStats, normalizeStats, winningSideOf, TEAM_OF_SEAT, type Seat } from './stats';
+import { incrementGamesCompleted } from '../observability/metrics';
 import { getDealerForBoard, calculateVulnerability } from './gameEngine';
 import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from './cardUtils';
 import { GamePhase } from '@prisma/client';
@@ -221,6 +222,8 @@ export async function processPlayAction(
             await getGameStateStore().save(gameId, finalGameState as GameState, { phaseTransition: true });
             await getGameStateStore().evict(gameId);
             await prisma.game.update({ where: { id: gameId }, data: { phase: GamePhase.COMPLETED, endedAt: new Date() } });
+            // Feature 21: increment the games-completed Prometheus counter.
+            incrementGamesCompleted();
 
             const roomSettings = (game.gameRoom as any).settings ?? {};
             const totalBoards = typeof roomSettings === 'object' ? (roomSettings as any).numBoards ?? 1 : 1;
