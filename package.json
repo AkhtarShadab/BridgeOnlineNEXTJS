@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
+    "db:indexes": "dotenv -e .env -- node --experimental-strip-types scripts/apply-indexes.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "test": "vitest run",
