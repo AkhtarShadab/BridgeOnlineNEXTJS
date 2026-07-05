@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { validateBidAction, isBiddingComplete, isPassedOut, determineContract, type BidAction } from '@/lib/game/bidding';
 import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
 import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
+import { getGameStateStore, type GameState } from '@/lib/game/gameStateStore';
 import { GamePhase } from '@prisma/client';
 import { z } from 'zod';
 
@@ -83,7 +84,10 @@ export async function POST(
             );
         }
 
-        const gameState = game.gameState as any;
+        // Feature 17: read hot state through the store (Redis when configured +
+        // flag on, Postgres otherwise). Fall back to the row's gameState as a
+        // safety net.
+        const gameState = ((await getGameStateStore().load(gameId)) ?? (game.gameState as any)) as any;
         const bidHistory: BidAction[] = gameState.bidHistory || [];
 
         // Create bid action — include username for display in bid history
@@ -142,10 +146,13 @@ export async function POST(
                 passCount: 0,
             };
 
+            // Feature 17: redealt hands are critical state — snapshot to Postgres
+            // (phaseTransition: true) so a Redis crash doesn't lose the new deal.
+            // The phase itself stays BIDDING, but the hands change completely.
+            await getGameStateStore().save(gameId, redealtState as unknown as GameState, { phaseTransition: true });
             await prisma.game.update({
                 where: { id: gameId },
                 data: {
-                    gameState: redealtState as object,
                     phase: GamePhase.BIDDING,
                     boardNumber: nextBoardNumber,
                     dealerId: dealerPlayer?.userId ?? game.dealerId,
@@ -211,10 +218,13 @@ export async function POST(
 
         console.log(`[BidRoute] Transitioning game ${gameId}: phase=${newPhase}, currentPlayerId=${finalCurrentPlayerId}, biddingComplete=${biddingComplete}`);
 
+        // Feature 17: hot state through the store. Snapshot to Postgres only on
+        // the BIDDING→PLAYING phase transition (biddingComplete). Non-state
+        // columns (currentPlayerId, phase, declarerId) stay in the Postgres row.
+        await getGameStateStore().save(gameId, updatedGameState as GameState, { phaseTransition: biddingComplete });
         await prisma.game.update({
             where: { id: gameId },
             data: {
-                gameState: updatedGameState,
                 currentPlayerId: finalCurrentPlayerId,
                 phase: newPhase,
                 declarerId: declarerId,

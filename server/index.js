@@ -5,6 +5,8 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { registerSocketHandlers } from '../lib/socket/register-handlers.js';
 import { isRedisConfigured, getPubClient, getSubClient, closeRedisClients } from '../lib/redis.ts';
+import { InMemoryReconnectManager, RedisReconnectManager, type ReconnectManager } from '../lib/socket/reconnect.ts';
+import { isEnabled } from '../lib/features.ts';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0'; // Listen on all network interfaces
@@ -57,9 +59,22 @@ app.prepare().then(async () => {
 
     registerSocketHandlers(io);
 
-    // Feature 08: reconnection / disconnect handling
-    // Track per-user disconnect timeouts so we can cancel them on reconnect.
-    const disconnectTimers = new Map(); // userId -> { timeout, roomId, gameId, seat, username, graceEndsAt }
+    // Feature 08/17: reconnection grace manager. Uses Redis TTL keys +
+    // keyspace notifications when Redis is configured (cross-replica, survives
+    // restarts), falls back to the in-memory Map otherwise (Feature 08).
+    // Both paths are additionally gated by FEATURE_RECONNECT_GRACE — if the
+    // flag is off, no disconnect events are emitted at all.
+    let reconnectManager: ReconnectManager | null = null;
+    if (isEnabled('reconnectGrace')) {
+        reconnectManager = isRedisConfigured()
+            ? new RedisReconnectManager(getPubClient)
+            : new InMemoryReconnectManager();
+        await reconnectManager.start(io);
+        console.log(`[Server] Reconnect grace: ${isRedisConfigured() ? 'Redis TTL' : 'in-memory'} manager active`);
+    } else {
+        console.log('[Server] Reconnect grace: disabled (FEATURE_RECONNECT_GRACE=false)');
+    }
+
     const GRACE_MS = 30_000;
 
     io.on('connection', (socket) => {
@@ -74,6 +89,10 @@ app.prepare().then(async () => {
             if (data?.userId) {
                 registeredUserId = data.userId;
                 registeredRoomId = data.roomId;
+            }
+            // Feature 08/17: check for pending reconnect on room:join
+            if (reconnectManager && data?.userId) {
+                reconnectManager.onReconnect(io, data.userId, data.roomId);
             }
         });
         socket.on('room:seat_changed', (data) => {
@@ -94,48 +113,15 @@ app.prepare().then(async () => {
         socket.on('disconnect', () => {
             if (!registeredUserId || !registeredRoomId) return;
             console.log(`[Server] User ${registeredUsername || registeredUserId} disconnected; starting ${GRACE_MS / 1000}s grace`);
-
-            const graceEndsAt = Date.now() + GRACE_MS;
-            const userInfo = {
-                timeout: setTimeout(() => {
-                    console.log(`[Server] Grace expired for user ${registeredUserId}`);
-                    disconnectTimers.delete(registeredUserId);
-                    io.to(`room-${registeredRoomId}`).emit('game:disconnect_timeout', {
-                        userId: registeredUserId,
-                        seat: registeredSeat,
-                    });
-                }, GRACE_MS),
-                roomId: registeredRoomId,
-                gameId: registeredGameId,
-                seat: registeredSeat,
-                username: registeredUsername,
-                graceEndsAt,
-            };
-            disconnectTimers.set(registeredUserId, userInfo);
-
-            io.to(`room-${registeredRoomId}`).emit('game:player_disconnected', {
-                userId: registeredUserId,
-                seat: registeredSeat,
-                username: registeredUsername,
-                graceEndsAt,
-            });
-        });
-    });
-
-    // Listen for socket rejoins to clear disconnect timers
-    io.on('connection', (socket) => {
-        socket.on('room:join', (data) => {
-            if (!data?.userId) return;
-            const pending = disconnectTimers.get(data.userId);
-            if (pending) {
-                clearTimeout(pending.timeout);
-                disconnectTimers.delete(data.userId);
-                io.to(`room-${pending.roomId}`).emit('game:player_reconnected', {
-                    userId: data.userId,
-                    seat: pending.seat,
-                    username: pending.username,
+            if (reconnectManager) {
+                reconnectManager.onDisconnect(io, {
+                    userId: registeredUserId,
+                    roomId: registeredRoomId,
+                    gameId: registeredGameId,
+                    seat: registeredSeat,
+                    username: registeredUsername,
+                    graceEndsAt: Date.now() + GRACE_MS,
                 });
-                console.log(`[Server] User ${data.userId} reconnected within grace window`);
             }
         });
     });
@@ -146,10 +132,11 @@ app.prepare().then(async () => {
         console.log(`> Socket.io server running`);
     });
 
-    // Feature 16: graceful shutdown — close Socket.io + Redis clients so the
+    // Feature 16/17: graceful shutdown — close Socket.io + Redis clients so the
     // process exits cleanly on SIGTERM (k8s pod rotation, docker stop).
     process.on('SIGTERM', async () => {
         console.log('[Server] SIGTERM received, shutting down...');
+        if (reconnectManager) await reconnectManager.stop();
         io.close();
         await closeRedisClients();
         server.close(() => process.exit(0));

@@ -261,8 +261,8 @@ io.adapter(createAdapter(pubClient, subClient));
 
 Implemented in `lib/redis.ts` (singleton pub/sub client factory + `isRedisConfigured()` capability gate) and wired in `server/index.js`. **No feature flag** — the Redis *capability* (`REDIS_URL` set) is the sole gate, because a flag that disagrees with `REDIS_URL` fails silently in two of four states. Per-feature kill switches for the downstream Redis features (17 hot/cold state, 18 BullMQ) live in `lib/features.ts` as `FEATURE_HOT_COLD_STATE` / `FEATURE_ACTION_QUEUE`; they do not gate the adapter. Falls back to the in-memory adapter when `REDIS_URL` is unset (dev). **Sticky sessions still required** at the ingress for the Socket.io upgrade handshake even with the adapter — see `__tests__/socket/redis-adapter.test.ts` for the cross-replica broadcast regression guard.
 
-### 8.2 Hot/Cold Game State (P0)
-Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions.
+### 8.2 Hot/Cold Game State (P0) ✅ Feature 17
+Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions. Implemented in `lib/game/gameStateStore.ts` (`RedisGameStateStore` / `PostgresGameStateStore`, selected by `isRedisConfigured()` + `FEATURE_HOT_COLD_STATE` kill switch). Wired into bid/play/GET routes and `gameEngine.initializeGame`. **Note:** multi-replica writes are NOT safe until Feature 18 (BullMQ) — keep API `replicas: 1`.
 
 ### 8.3 BullMQ Action Queue (P1)
 Route socket game actions through a BullMQ queue so moves are durable and retriable on server crash.
@@ -270,8 +270,8 @@ Route socket game actions through a BullMQ queue so moves are durable and retria
 socket event → BullMQ (Redis) → Game Worker → Socket.io broadcast
 ```
 
-### 8.4 Reconnection Protocol (P1)
-On disconnect, set a 30s Redis TTL key (`player:disconnected:{userId}`). If player rejoins within grace period, restore game state from Redis and notify room. After 30s, remove seat.
+### 8.4 Reconnection Protocol (P1) ✅ Feature 17 (folds in #16 gap)
+On disconnect, set a 30s Redis TTL key (`game:disconnected:{userId}`). If player rejoins within grace period, clear the key and notify room. After 30s, keyspace notification fires `game:disconnect_timeout`. Implemented in `lib/socket/reconnect.ts` (`RedisReconnectManager` / `InMemoryReconnectManager`, selected by `isRedisConfigured()`). Cross-replica reconnect verified — a player disconnecting from server A and reconnecting to server B clears the shared Redis key.
 
 ### 8.5 Service Separation (P2)
 Three independently deployable units sharing only Redis and PostgreSQL:

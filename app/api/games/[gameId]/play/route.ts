@@ -7,6 +7,7 @@ import { GamePhase } from '@prisma/client';
 import { calculateScore } from '@/lib/game/scoring';
 import { applyBoardToStats, normalizeStats, winningSideOf, TEAM_OF_SEAT, type Seat } from '@/lib/game/stats';
 import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
+import { getGameStateStore, type GameState } from '@/lib/game/gameStateStore';
 import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
 import { z } from 'zod';
 
@@ -87,7 +88,7 @@ export async function POST(
             );
         }
 
-        const gameState = game.gameState as any;
+        const gameState = ((await getGameStateStore().load(gameId)) ?? (game.gameState as any)) as any;
         // Hands are stored in gameState.hands (per-seat object), not in the deck field
         // (game.deck is the flat shuffled array kept for verification only)
         const hands: Record<string, string[]> = { ...(gameState.hands || {}) };
@@ -199,10 +200,14 @@ export async function POST(
                     tricks,
                 };
 
+                // Feature 17: final state through the store. COMPLETED is a phase
+                // transition → snapshot to Postgres, then evict the hot key so Redis
+                // doesn't hold stale finished games.
+                await getGameStateStore().save(gameId, finalGameState as GameState, { phaseTransition: true });
+                await getGameStateStore().evict(gameId);
                 await prisma.game.update({
                     where: { id: gameId },
                     data: {
-                        gameState: finalGameState,
                         phase: GamePhase.COMPLETED,
                         endedAt: new Date(),
                     },
@@ -252,18 +257,19 @@ export async function POST(
             gameState.currentTrick = currentTrick;
         }
 
-        // Update game state — persist updated hands back into gameState.hands
+        // Feature 17: hot state through the store. Normal card play is NOT a
+        // phase transition (unless it's the 13th trick, handled above which
+        // returns early) — so no Postgres snapshot here, just Redis write.
         const updatedGameState = {
             ...gameState,
             hands,
             currentTrick: currentTrick.length === 4 ? [] : currentTrick,
             tricks,
         };
-
+        await getGameStateStore().save(gameId, updatedGameState as GameState, { phaseTransition: false });
         await prisma.game.update({
             where: { id: gameId },
             data: {
-                gameState: updatedGameState,
                 currentPlayerId: nextPlayer?.userId,
                 phase: newPhase,
             },
