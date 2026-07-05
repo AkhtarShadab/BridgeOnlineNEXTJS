@@ -9,3 +9,13 @@ services:
       - '5433:5432'
     tmpfs:
       - /var/lib/postgresql/data
+
+  # Feature 16: Redis for the Socket.io adapter integration test
+  # (__tests__/socket/redis-adapter.test.ts) and future 17/18 tests.
+  # Host port 6380 avoids clashing with a developer's local redis on 6379.
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    tmpfs:
+      - /data

@@ -2,7 +2,9 @@ import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { registerSocketHandlers } from '../lib/socket/register-handlers.js';
+import { isRedisConfigured, getPubClient, getSubClient, closeRedisClients } from '../lib/redis.ts';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0'; // Listen on all network interfaces
@@ -11,7 +13,7 @@ const port = 3000;
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
     const server = createServer(async (req, res) => {
         try {
             const parsedUrl = parse(req.url, true);
@@ -33,6 +35,25 @@ app.prepare().then(() => {
     // Make Socket.IO instance globally accessible to Next.js API routes
     // This enables API routes (e.g. /api/rooms/[roomId]/start) to emit events
     global.io = io;
+
+    // Feature 16: Redis adapter for horizontal scaling. When REDIS_URL is set,
+    // wire the redis-adapter so io.to(room).emit(...) reaches sockets on all
+    // replicas (cross-process broadcast + shared room membership). When unset
+    // (local dev), fall back to the in-memory adapter — single-replica only.
+    // There is deliberately NO feature flag here: Redis *capability* is the
+    // gate (see lib/redis.ts). A flag that disagrees with REDIS_URL would fail
+    // silently in two of four states.
+    if (isRedisConfigured()) {
+        try {
+            const [pub, sub] = await Promise.all([getPubClient(), getSubClient()]);
+            io.adapter(createAdapter(pub, sub));
+            console.log('[Socket.io] Redis adapter enabled → multi-replica ready');
+        } catch (err) {
+            console.error('[Socket.io] Redis adapter failed, falling back to in-memory:', err.message);
+        }
+    } else {
+        console.log('[Socket.io] No REDIS_URL → in-memory adapter (single-replica dev only)');
+    }
 
     registerSocketHandlers(io);
 
@@ -123,5 +144,14 @@ app.prepare().then(() => {
         console.log(`> Ready on http://localhost:${port}`);
         console.log(`> Network access: http://192.168.243.113:${port}`);
         console.log(`> Socket.io server running`);
+    });
+
+    // Feature 16: graceful shutdown — close Socket.io + Redis clients so the
+    // process exits cleanly on SIGTERM (k8s pod rotation, docker stop).
+    process.on('SIGTERM', async () => {
+        console.log('[Server] SIGTERM received, shutting down...');
+        io.close();
+        await closeRedisClients();
+        server.close(() => process.exit(0));
     });
 });

@@ -251,13 +251,15 @@ Use short-lived HMAC-signed credentials generated server-side per session (see S
 
 ## 8. Scalability
 
-### 8.1 Redis Socket.io Adapter (P0)
+### 8.1 Redis Socket.io Adapter (P0) ✅ Feature 16
 Socket.io defaults to single-process state. Add `@socket.io/redis-adapter` so any server replica can emit to any room.
 
 ```javascript
 import { createAdapter } from '@socket.io/redis-adapter';
 io.adapter(createAdapter(pubClient, subClient));
 ```
+
+Implemented in `lib/redis.ts` (singleton pub/sub client factory + `isRedisConfigured()` capability gate) and wired in `server/index.js`. **No feature flag** — the Redis *capability* (`REDIS_URL` set) is the sole gate, because a flag that disagrees with `REDIS_URL` fails silently in two of four states. Per-feature kill switches for the downstream Redis features (17 hot/cold state, 18 BullMQ) live in `lib/features.ts` as `FEATURE_HOT_COLD_STATE` / `FEATURE_ACTION_QUEUE`; they do not gate the adapter. Falls back to the in-memory adapter when `REDIS_URL` is unset (dev). **Sticky sessions still required** at the ingress for the Socket.io upgrade handshake even with the adapter — see `__tests__/socket/redis-adapter.test.ts` for the cross-replica broadcast regression guard.
 
 ### 8.2 Hot/Cold Game State (P0)
 Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions.
