@@ -23,8 +23,10 @@ async function indexNames(): Promise<string[]> {
 }
 
 async function explain(query: string): Promise<string> {
-  const rows = await testPrisma.$queryRawUnsafe<{ QUERY: string }[]>(`EXPLAIN ${query}`);
-  return rows.map((r) => r.QUERY).join('\n');
+  // Postgres EXPLAIN returns rows with a single column named "QUERY PLAN".
+  // Prisma keys it unpredictably (lowercased / spaced), so read the first value.
+  const rows = await testPrisma.$queryRawUnsafe<Record<string, unknown>[]>(`EXPLAIN ${query}`);
+  return rows.map((r) => String(Object.values(r)[0] ?? '')).join('\n');
 }
 
 describe('Feature 15 — indexes exist', () => {
@@ -70,33 +72,36 @@ describe('Feature 15 — indexes exist', () => {
 
 describe('Feature 15 — loadBoardScores query plan uses the partial index', () => {
   it('EXPLAIN shows an Index Scan on idx_games_room_phase (not Seq Scan)', async () => {
-    // Seed: 50 COMPLETED + 2 IN_PROGRESS games in one room.
+    // Seed 50 COMPLETED + 2 IN_PROGRESS games in one room.
+    // Scale: enough rows that the planner prefers the partial index over a
+    // seq scan. ~3000 rows with ~100 active (3% selectivity) is the crossover.
     const user = await createTestUser();
     const room = await createTestRoom(user.id);
     const baseState = { hands: {}, currentBid: null, bidHistory: [], tricks: [], currentTrick: [], trumpSuit: null, contract: null };
 
-    for (let i = 0; i < 50; i++) {
-      await testPrisma.game.create({
-        data: {
-          gameRoomId: room.id,
-          phase: GamePhase.COMPLETED,
-          boardNumber: i + 1,
-          dealerId: user.id,
-          gameState: { ...baseState, boardNumber: i + 1 } as any,
-        },
-      });
-    }
-    for (let i = 0; i < 2; i++) {
-      await testPrisma.game.create({
-        data: {
-          gameRoomId: room.id,
-          phase: GamePhase.PLAYING,
-          boardNumber: 51 + i,
-          dealerId: user.id,
-          gameState: { ...baseState } as any,
-        },
-      });
-    }
+    const COMPLETED = 3000;
+    const ACTIVE = 100;
+    // Batch-insert via createMany for speed.
+    await testPrisma.game.createMany({
+      data: Array.from({ length: COMPLETED }, (_, i) => ({
+        gameRoomId: room.id,
+        phase: GamePhase.COMPLETED,
+        boardNumber: i + 1,
+        dealerId: user.id,
+        gameState: { ...baseState, boardNumber: i + 1 } as any,
+      })),
+    });
+    await testPrisma.game.createMany({
+      data: Array.from({ length: ACTIVE }, (_, i) => ({
+        gameRoomId: room.id,
+        phase: GamePhase.PLAYING,
+        boardNumber: COMPLETED + i + 1,
+        dealerId: user.id,
+        gameState: { ...baseState } as any,
+      })),
+    });
+
+    await testPrisma.$executeRawUnsafe(`ANALYZE "games"`);
 
     // Mirror loadBoardScores' WHERE clause. The partial index covers
     // phase <> 'COMPLETED', but loadBoardScores filters phase = 'COMPLETED'
@@ -133,9 +138,11 @@ describe('Feature 15 — game_moves replay is index-only', () => {
       },
     });
 
-    // Seed 200 moves so the planner prefers the index.
+    // Seed 10,000 moves so the planner prefers an index-only scan over a
+    // seq scan + sort. At 200 rows the seq scan is genuinely cheaper; at 10k
+    // the covering index wins because it satisfies the ORDER BY for free.
     await testPrisma.gameMove.createMany({
-      data: Array.from({ length: 200 }, (_, i) => ({
+      data: Array.from({ length: 10_000 }, (_, i) => ({
         gameId: game.id,
         playerId: user.id,
         moveType: 'PLAY_CARD',
@@ -144,9 +151,11 @@ describe('Feature 15 — game_moves replay is index-only', () => {
       })),
     });
 
-    // ANALYZE so the planner has stats; otherwise it may pick a seq scan on
-    // a tiny test table regardless of the index.
-    await testPrisma.$executeRawUnsafe(`ANALYZE "game_moves"`);
+    // VACUUM ANALYZE so the visibility map is set (required for Index Only
+    // Scan — ANALYZE alone only gathers stats, not visibility). Without VACUUM,
+    // Postgres must heap-fetch every row for visibility checks, making the
+    // covering index more expensive than a seq scan.
+    await testPrisma.$executeRawUnsafe(`VACUUM ANALYZE "game_moves"`);
 
     const plan = await explain(
       `SELECT "move_type", "move_data" FROM "game_moves" WHERE "game_id" = '${game.id}' ORDER BY "sequence_number"`,

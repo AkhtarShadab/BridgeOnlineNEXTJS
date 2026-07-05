@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { FEATURE_15_INDEXES } from '../../lib/db/indexes';
 
 export async function setup() {
-  config({ path: path.resolve(process.cwd(), '.env.test') });
+  config({ path: path.resolve(process.cwd(), '.env.test'), override: true });
 
   try {
     execSync('npx prisma db push --skip-generate', {
