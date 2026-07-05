@@ -29,6 +29,9 @@ beforeAll(async () => {
     try {
         probeClient = createClient({ url: REDIS_URL, socket: { connectTimeout: 2000 } }) as RedisClientType;
         await probeClient.connect();
+        // Flush stale adapter/queue state from prior test files so room membership
+        // and keyspace subscriptions start clean (test isolation).
+        await probeClient.flushall().catch(() => {});
         redisReachable = true;
     } catch {
         redisReachable = false;

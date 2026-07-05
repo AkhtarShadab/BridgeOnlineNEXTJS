@@ -264,11 +264,13 @@ Implemented in `lib/redis.ts` (singleton pub/sub client factory + `isRedisConfig
 ### 8.2 Hot/Cold Game State (P0) ✅ Feature 17
 Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions. Implemented in `lib/game/gameStateStore.ts` (`RedisGameStateStore` / `PostgresGameStateStore`, selected by `isRedisConfigured()` + `FEATURE_HOT_COLD_STATE` kill switch). Wired into bid/play/GET routes and `gameEngine.initializeGame`. **Note:** multi-replica writes are NOT safe until Feature 18 (BullMQ) — keep API `replicas: 1`.
 
-### 8.3 BullMQ Action Queue (P1)
-Route socket game actions through a BullMQ queue so moves are durable and retriable on server crash.
+### 8.3 BullMQ Action Queue (P1) ✅ Feature 18
+Route game actions through a BullMQ queue so moves are durable and retriable on server crash. In the as-built architecture, actions come via REST API routes (not socket events), so the queue sits in front of the route's mutation logic.
 ```
-socket event → BullMQ (Redis) → Game Worker → Socket.io broadcast
+POST /api/games/:id/{bid,play} → enqueue {actionId, gameId, userId, action} → 200 {queued, actionId}
+Game Worker (concurrency 1) → processBidAction/processPlayAction → Socket.io broadcast
 ```
+Implemented in `lib/queue/gameQueue.ts` (enqueue + `shouldUseQueue()` gate), `lib/game/actions.ts` (pure processing extracted from routes, idempotent on `actionId`), `server/gameWorker.ts` (BullMQ Worker). Kill switch: `FEATURE_ACTION_QUEUE` (default false). Idempotency: BullMQ `jobId = actionId` dedupes enqueued jobs; the processing functions also check `actionId` in stored state. Validation failures throw `UNRECOVERABLE` → dead-letter (no retry). This unblocks API `replicas: 2+` (serialized per-game writes).
 
 ### 8.4 Reconnection Protocol (P1) ✅ Feature 17 (folds in #16 gap)
 On disconnect, set a 30s Redis TTL key (`game:disconnected:{userId}`). If player rejoins within grace period, clear the key and notify room. After 30s, keyspace notification fires `game:disconnect_timeout`. Implemented in `lib/socket/reconnect.ts` (`RedisReconnectManager` / `InMemoryReconnectManager`, selected by `isRedisConfigured()`). Cross-replica reconnect verified — a player disconnecting from server A and reconnecting to server B clears the shared Redis key.

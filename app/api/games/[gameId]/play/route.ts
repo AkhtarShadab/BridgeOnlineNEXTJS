@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { isValidPlay, determineTrickWinner } from '@/lib/game/playing';
-import type { Card } from '@/lib/constants/cards';
-import { GamePhase } from '@prisma/client';
-import { calculateScore } from '@/lib/game/scoring';
-import { applyBoardToStats, normalizeStats, winningSideOf, TEAM_OF_SEAT, type Seat } from '@/lib/game/stats';
-import { getDealerForBoard, calculateVulnerability } from '@/lib/game/gameEngine';
-import { getGameStateStore, type GameState } from '@/lib/game/gameStateStore';
-import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from '@/lib/game/cardUtils';
+import { processPlayAction } from '@/lib/game/actions';
+import { shouldUseQueue, enqueueGameAction, type PlayPayload } from '@/lib/queue/gameQueue';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 const playCardSchema = z.object({
     card: z.string().regex(/^[2-9TJQKA][CDHS]$/), // e.g., "AS", "KH", "QD"
+    actionId: z.string().optional(), // Feature 18: client-generated UUID for idempotency
 });
 
 /**
  * POST /api/games/[gameId]/play
- * Play a card during the playing phase
- * Body: { card: "AS" }
+ * Play a card during the playing phase.
+ *
+ * Feature 18: when FEATURE_ACTION_QUEUE is on (and Redis configured), the action
+ * is enqueued to BullMQ and processed by the Game Worker (serialized per game).
+ * When off, processed inline via processPlayAction.
  */
 export async function POST(
     request: NextRequest,
@@ -26,483 +25,39 @@ export async function POST(
 ) {
     try {
         const session = await auth();
-
         if (!session?.user?.id) {
-            return NextResponse.json(
-                { error: 'Unauthorized' },
-                { status: 401 }
-            );
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const { gameId } = await params;
         const body = await request.json();
-        const { card } = playCardSchema.parse(body);
+        const { card, actionId } = playCardSchema.parse(body);
+        const finalActionId = actionId ?? randomUUID();
 
-        // Fetch game
+        // Fast-fail: auth ✓, Zod ✓, player in game ✓.
         const game = await prisma.game.findUnique({
             where: { id: gameId },
-            include: {
-                gamePlayers: true,
-                gameRoom: true,
-            },
+            include: { gamePlayers: true },
         });
-
-        if (!game) {
-            return NextResponse.json(
-                { error: 'Game not found' },
-                { status: 404 }
-            );
-        }
-
-        // Verify player is in game
+        if (!game) return NextResponse.json({ error: 'Game not found' }, { status: 404 });
         const player = game.gamePlayers.find(p => p.userId === session.user.id);
-        if (!player) {
-            return NextResponse.json(
-                { error: 'You are not in this game' },
-                { status: 403 }
-            );
+        if (!player) return NextResponse.json({ error: 'You are not in this game' }, { status: 403 });
+
+        // Feature 18: enqueue or process inline.
+        if (shouldUseQueue()) {
+            const payload: PlayPayload = { card };
+            await enqueueGameAction({ actionId: finalActionId, gameId, userId: session.user.id, type: 'play', payload });
+            return NextResponse.json({ success: true, queued: true, actionId: finalActionId });
         }
 
-        //Must be in PLAYING phase
-        if (game.phase !== 'PLAYING') {
-            return NextResponse.json(
-                { error: 'Game is not in playing phase' },
-                { status: 400 }
-            );
-        }
-
-        // Must be current player's turn (or declarer playing for dummy)
-        const playerSeat = player.seat;
-        const isPlayerTurn = game.currentPlayerId === session.user.id;
-
-        // Check if player is declarer and it's dummy's turn
-        const declarer = game.gamePlayers.find(p => p.userId === game.declarerId);
-        const dummySeat = declarer ? getPartnerSeat(declarer.seat) : null;
-        const isDummyTurn = dummySeat && game.gamePlayers.find(p => p.seat === dummySeat)?.userId === game.currentPlayerId;
-        const isDeclarerPlayingForDummy = game.declarerId === session.user.id && isDummyTurn;
-
-        if (!isPlayerTurn && !isDeclarerPlayingForDummy) {
-            return NextResponse.json(
-                { error: 'Not your turn' },
-                { status: 400 }
-            );
-        }
-
-        const gameState = ((await getGameStateStore().load(gameId)) ?? (game.gameState as any)) as any;
-        // Hands are stored in gameState.hands (per-seat object), not in the deck field
-        // (game.deck is the flat shuffled array kept for verification only)
-        const hands: Record<string, string[]> = { ...(gameState.hands || {}) };
-
-        // Get current player's hand
-        const currentPlayerSeat = game.gamePlayers.find(p => p.userId === game.currentPlayerId)?.seat;
-        if (!currentPlayerSeat) {
-            return NextResponse.json({ error: 'Current player not found' }, { status: 500 });
-        }
-
-        const currentHand = hands[currentPlayerSeat] || [];
-
-        // Validate card is in hand
-        if (!currentHand.includes(card)) {
-            return NextResponse.json(
-                { error: 'Card not in your hand' },
-                { status: 400 }
-            );
-        }
-
-        // Validate play follows suit rules
-        const currentTrick = gameState.currentTrick || [];
-        const validation = isValidPlay(card as Card, currentHand as Card[], currentTrick, gameState.contract?.suit ?? null);
-
-        if (!validation.valid) {
-            return NextResponse.json(
-                { error: validation.error },
-                { status: 400 }
-            );
-        }
-
-        // Remove card from hand (update local copy)
-        const updatedHand = currentHand.filter((c: string) => c !== card);
-        hands[currentPlayerSeat] = updatedHand;
-
-        // Add card to current trick
-        currentTrick.push({
-            card,
-            player: game.currentPlayerId,
-            seat: currentPlayerSeat,
-        });
-
-        let tricks = gameState.tricks || [];
-        let nextPlayer = getNextPlayer(game.gamePlayers, game.currentPlayerId!);
-        let newPhase: GamePhase = game.phase;
-
-        // Check if trick is complete (4 cards)
-        if (currentTrick.length === 4) {
-            const winnerPlayerId = determineTrickWinner(currentTrick, gameState.contract?.suit ?? null);
-            const winnerPlayer = game.gamePlayers.find(p => p.userId === winnerPlayerId);
-            tricks.push({
-                cards: currentTrick,
-                winner: winnerPlayer?.seat,
-            });
-
-            // Winner leads next trick
-            nextPlayer = winnerPlayer;
-            gameState.currentTrick = [];
-
-            // Check if all 13 tricks complete
-            if (tricks.length === 13) {
-                newPhase = GamePhase.SCORING;
-
-                // Calculate score
-                const tricksWon = calculateTricksWon(tricks);
-                const declarerTeam = declarer && (declarer.seat === 'NORTH' || declarer.seat === 'SOUTH') ? 'NS' : 'EW';
-                const declarerTricks = declarerTeam === 'NS' ? tricksWon.NS : tricksWon.EW;
-
-                const contract = gameState.contract;
-                const vulnerability = getVulnerability(game.boardNumber);
-
-                const score = calculateScore(contract, declarerTricks, declarerTeam, vulnerability);
-
-                const contractMade = declarerTricks >= contract.level + 6;
-
-                // Create game result. `statsApplied` marks that Feature 14 player
-                // stats were written for this board (belt-and-braces against any
-                // path that bypasses the PLAYING-phase guard above).
-                await prisma.gameResult.create({
-                    data: {
-                        gameId,
-                        winningTeam: score.scoreNS > score.scoreEW ? 'NS' : 'EW',
-                        contractTricks: contract.level + 6,
-                        contractSuit: contract.suit,
-                        tricksWon: declarerTricks,
-                        scoreNS: score.scoreNS,
-                        scoreEW: score.scoreEW,
-                        detailedScoring: { ...(score as object), statsApplied: true },
-                    },
-                });
-
-                // Feature 14: credit all four seated players' cumulative stats for
-                // this completed board. Idempotent by the PLAYING-phase guard — a
-                // retried completion is rejected with 400 before reaching here.
-                // Winner-positive: the winning side banks |score|, the losing side 0.
-                await updatePlayerStatsForBoard(
-                    game.gamePlayers,
-                    declarer?.seat as Seat | undefined,
-                    contractMade,
-                    score.scoreNS,
-                    score.scoreEW,
-                );
-
-                // Save final gameState (all 13 tricks + updated hands) and mark completed
-                const finalGameState = {
-                    ...gameState,
-                    hands,
-                    currentTrick: [],
-                    tricks,
-                };
-
-                // Feature 17: final state through the store. COMPLETED is a phase
-                // transition → snapshot to Postgres, then evict the hot key so Redis
-                // doesn't hold stale finished games.
-                await getGameStateStore().save(gameId, finalGameState as GameState, { phaseTransition: true });
-                await getGameStateStore().evict(gameId);
-                await prisma.game.update({
-                    where: { id: gameId },
-                    data: {
-                        phase: GamePhase.COMPLETED,
-                        endedAt: new Date(),
-                    },
-                });
-
-                // Check if there are more boards to play
-                const roomSettings = (game.gameRoom as any).settings ?? {};
-                const totalBoards = typeof roomSettings === 'object' ? (roomSettings as any).numBoards ?? 1 : 1;
-                const nextGameId = game.boardNumber < totalBoards
-                    ? await startNextBoard(game, game.gameRoom.id)
-                    : null;
-
-                // Broadcast game completion to all players
-                if (global.io) {
-                    const roomKey = `room-${game.gameRoom.id}`;
-                    const gameKey = `game-${gameId}`;
-                    global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
-                    global.io.to(roomKey).to(gameKey).emit('game:completed', {
-                        gameId,
-                        score,
-                        nextGameId,
-                        boardNumber: game.boardNumber,
-                        totalBoards,
-                    });
-                }
-
-                return NextResponse.json({
-                    success: true,
-                    card,
-                    trickComplete: true,
-                    gameComplete: true,
-                    score,
-                    nextGameId,
-                    boardNumber: game.boardNumber,
-                    totalBoards,
-                });
-            }
-
-            // Broadcast trick completion to all players
-            if (global.io) {
-                const roomKey = `room-${game.gameRoom.id}`;
-                const gameKey = `game-${gameId}`;
-                global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
-                global.io.to(roomKey).to(gameKey).emit('game:trick_completed', { gameId });
-            }
-        } else {
-            gameState.currentTrick = currentTrick;
-        }
-
-        // Feature 17: hot state through the store. Normal card play is NOT a
-        // phase transition (unless it's the 13th trick, handled above which
-        // returns early) — so no Postgres snapshot here, just Redis write.
-        const updatedGameState = {
-            ...gameState,
-            hands,
-            currentTrick: currentTrick.length === 4 ? [] : currentTrick,
-            tricks,
-        };
-        await getGameStateStore().save(gameId, updatedGameState as GameState, { phaseTransition: false });
-        await prisma.game.update({
-            where: { id: gameId },
-            data: {
-                currentPlayerId: nextPlayer?.userId,
-                phase: newPhase,
-            },
-        });
-
-        // Record move
-        await prisma.gameMove.create({
-            data: {
-                gameId,
-                playerId: session.user.id,
-                moveType: 'PLAY_CARD',
-                moveData: { card },
-                sequenceNumber: (gameState.bidHistory?.length || 0) + tricks.length * 4 + currentTrick.length,
-            },
-        });
-
-        // Broadcast card play to all players
-        if (global.io) {
-            const roomKey = `room-${game.gameRoom.id}`;
-            const gameKey = `game-${gameId}`;
-            global.io.to(roomKey).to(gameKey).emit('game:card_played', { gameId, card });
-        }
-
-        return NextResponse.json({
-            success: true,
-            card,
-            trickComplete: currentTrick.length === 4,
-            gameComplete: false,
-        });
+        // Inline path (current behavior): process synchronously.
+        const result = await processPlayAction(gameId, session.user.id, card, finalActionId);
+        return NextResponse.json(result.data, { status: result.status });
     } catch (error) {
         if (error instanceof z.ZodError) {
-            return NextResponse.json(
-                { error: 'Invalid card', details: error.errors },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'Invalid card', details: error.errors }, { status: 400 });
         }
         console.error('Error playing card:', error);
-        return NextResponse.json(
-            { error: 'Internal server error' },
-            { status: 500 }
-        );
-    }
-}
-
-/**
- * Get partner seat (opposite)
- */
-function getPartnerSeat(seat: string): string {
-    const partners: Record<string, string> = {
-        NORTH: 'SOUTH',
-        SOUTH: 'NORTH',
-        EAST: 'WEST',
-        WEST: 'EAST',
-    };
-    return partners[seat] || seat;
-}
-
-/**
- * Feature 14: credit all four seated players' cumulative `User.stats` for one
- * completed board, in a single transaction. Reads each player's current stats,
- * applies the pure `applyBoardToStats` math, and writes the merged JSON back.
- *
- * gamesWon is attributed by the side that won the board (declaring side if the
- * contract made, else defenders). totalScore uses **winner-positive** semantics:
- * the winning side adds |score| (the magnitude of the board's score) and the
- * losing side adds 0. This deliberately diverges from the raw scoreNS/scoreEW
- * bucket convention in `lib/game/scoring.ts` (which puts the signed penalty in
- * the declarer's bucket and 0 in the defenders' bucket on a set contract) so
- * that a defender who sets a contract sees a positive score, not zero.
- */
-async function updatePlayerStatsForBoard(
-    gamePlayers: { userId: string; seat: string }[],
-    declarerSeat: Seat | undefined,
-    contractMade: boolean,
-    scoreNS: number,
-    scoreEW: number,
-) {
-    const seated = gamePlayers.filter(
-        (p): p is { userId: string; seat: Seat } =>
-            !!p.userId && p.seat in TEAM_OF_SEAT,
-    );
-    if (seated.length === 0) return;
-
-    const winningSide = winningSideOf(
-        declarerSeat ? { declarer: declarerSeat } : null,
-        contractMade,
-    );
-
-    // One bucket is always 0 and the other holds the signed board score, so the
-    // sum of absolute values is the magnitude regardless of which side declared.
-    const scoreMagnitude = Math.abs(scoreNS) + Math.abs(scoreEW);
-
-    const users = await prisma.user.findMany({
-        where: { id: { in: seated.map((p) => p.userId) } },
-        select: { id: true, stats: true },
-    });
-    const statsById = new Map(users.map((u) => [u.id, normalizeStats(u.stats)]));
-
-    await prisma.$transaction(
-        seated.map((p) => {
-            const prev = statsById.get(p.userId) ?? { gamesPlayed: 0, gamesWon: 0, totalScore: 0 };
-            const next = applyBoardToStats(prev, p.seat, winningSide, scoreMagnitude);
-            return prisma.user.update({
-                where: { id: p.userId },
-                data: { stats: next },
-            });
-        }),
-    );
-}
-
-/**
- * Get next player clockwise
- */
-function getNextPlayer(players: any[], currentPlayerId: string): any {
-    const seatOrder = ['NORTH', 'EAST', 'SOUTH', 'WEST'];
-    const currentPlayer = players.find(p => p.userId === currentPlayerId);
-    if (!currentPlayer) return null;
-
-    const currentSeatIndex = seatOrder.indexOf(currentPlayer.seat);
-    const nextSeatIndex = (currentSeatIndex + 1) % 4;
-    const nextSeat = seatOrder[nextSeatIndex];
-
-    return players.find(p => p.seat === nextSeat);
-}
-
-/**
- * Calculate tricks won by each team
- */
-function calculateTricksWon(tricks: any[]): { NS: number; EW: number } {
-    let NS = 0;
-    let EW = 0;
-
-    tricks.forEach(trick => {
-        if (trick.winner === 'NORTH' || trick.winner === 'SOUTH') {
-            NS++;
-        } else {
-            EW++;
-        }
-    });
-
-    return { NS, EW };
-}
-
-/**
- * Get vulnerability based on board number
- */
-function getVulnerability(boardNumber: number): { NS: boolean; EW: boolean } {
-    const vuln = boardNumber % 16;
-
-    // Standard vulnerability rotation
-    if ([1, 8, 11, 14].includes(vuln)) return { NS: false, EW: false };
-    if ([2, 5, 12, 15].includes(vuln)) return { NS: true, EW: false };
-    if ([3, 6, 9, 0].includes(vuln)) return { NS: false, EW: true };
-    if ([4, 7, 10, 13].includes(vuln)) return { NS: true, EW: true };
-
-    return { NS: false, EW: false };
-}
-
-/**
- * Create the next board/game in a multi-board match.
- * Deals fresh cards, increments boardNumber, and links all players.
- */
-async function startNextBoard(completedGame: any, roomId: string): Promise<string | null> {
-    try {
-        const nextBoardNumber = (completedGame.boardNumber ?? 1) + 1;
-        const dealer = getDealerForBoard(nextBoardNumber);
-        const vulnerability = calculateVulnerability(nextBoardNumber);
-
-        // Get current players in the room
-        const players = await prisma.gamePlayer.findMany({
-            where: { gameRoomId: roomId },
-        });
-        if (players.length !== 4) return null;
-
-        // Deal fresh cards
-        const deck = createDeck();
-        const shuffled = shuffleDeck(deck);
-        const hands = dealCards(shuffled);
-        const sortedHands = {
-            NORTH: sortHand(hands.NORTH).map(cardToString),
-            SOUTH: sortHand(hands.SOUTH).map(cardToString),
-            EAST: sortHand(hands.EAST).map(cardToString),
-            WEST: sortHand(hands.WEST).map(cardToString),
-        };
-
-        const dealerPlayer = players.find(p => p.seat === dealer);
-        if (!dealerPlayer) return null;
-
-        // Create new game record
-        const newGame = await prisma.game.create({
-            data: {
-                gameRoomId: roomId,
-                phase: GamePhase.BIDDING,
-                boardNumber: nextBoardNumber,
-                dealerId: dealerPlayer.userId,
-                currentPlayerId: dealerPlayer.userId,
-                gameState: {
-                    hands: sortedHands,
-                    currentBid: null,
-                    bidHistory: [],
-                    tricks: [],
-                    currentTrick: [],
-                    trumpSuit: null,
-                    contract: null,
-                    vulnerability,
-                    dealer,
-                    passCount: 0,
-                } as object,
-                deck: shuffled.map(cardToString),
-            },
-        });
-
-        // Link players to new game
-        await prisma.gamePlayer.updateMany({
-            where: { gameRoomId: roomId },
-            data: { gameId: newGame.id, isReady: false },
-        });
-
-        // Emit next board event
-        if (global.io) {
-            const roomKey = `room-${roomId}`;
-            const gameKey = `game-${completedGame.id}`;
-            global.io.to(roomKey).to(gameKey).emit('game:next_board', {
-                gameId: completedGame.id,
-                nextGameId: newGame.id,
-                boardNumber: nextBoardNumber,
-            });
-        }
-
-        console.log(`[PlayRoute] Next board ${nextBoardNumber} started: ${newGame.id}`);
-        return newGame.id;
-    } catch (error) {
-        console.error('[PlayRoute] Error starting next board:', error);
-        return null;
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }

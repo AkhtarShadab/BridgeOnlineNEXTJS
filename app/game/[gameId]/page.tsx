@@ -93,11 +93,13 @@ export default function GamePage() {
         if (isSubmitting) return;
         setIsSubmitting(true);
         setOptimisticTrick(prev => [...(prev || []), { seat, card }]);
+        // Feature 18: actionId for idempotency — retried requests reuse the same UUID.
+        const actionId = crypto.randomUUID();
         try {
             const res = await fetch(`/api/games/${gameId}/play`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ card }),
+                body: JSON.stringify({ card, actionId }),
             });
             if (res.ok) {
                 await fetchGameState();
@@ -346,6 +348,8 @@ export default function GamePage() {
     };
 
     const handleBid = async (bid: { type: string; level?: number; suit?: string }) => {
+        // Feature 18: actionId for idempotency.
+        const actionId = crypto.randomUUID();
         try {
             const response = await fetch(`/api/games/${gameId}/bid`, {
                 method: "POST",
@@ -353,6 +357,7 @@ export default function GamePage() {
                 body: JSON.stringify({
                     action: bid.type,
                     bid: bid.level && bid.suit ? { level: bid.level, suit: bid.suit } : undefined,
+                    actionId,
                 }),
             });
 

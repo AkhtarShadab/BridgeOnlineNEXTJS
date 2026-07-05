@@ -7,6 +7,7 @@ import { registerSocketHandlers } from '../lib/socket/register-handlers.js';
 import { isRedisConfigured, getPubClient, getSubClient, closeRedisClients } from '../lib/redis.ts';
 import { InMemoryReconnectManager, RedisReconnectManager, type ReconnectManager } from '../lib/socket/reconnect.ts';
 import { isEnabled } from '../lib/features.ts';
+import { shouldUseQueue } from '../lib/queue/gameQueue.ts';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0'; // Listen on all network interfaces
@@ -58,6 +59,13 @@ app.prepare().then(async () => {
     }
 
     registerSocketHandlers(io);
+
+    // Feature 18: start the Game Worker when the action queue is enabled.
+    let gameWorker = null;
+    if (shouldUseQueue()) {
+        const { startGameWorker } = await import('./gameWorker.ts');
+        gameWorker = startGameWorker();
+    }
 
     // Feature 08/17: reconnection grace manager. Uses Redis TTL keys +
     // keyspace notifications when Redis is configured (cross-replica, survives
@@ -132,10 +140,10 @@ app.prepare().then(async () => {
         console.log(`> Socket.io server running`);
     });
 
-    // Feature 16/17: graceful shutdown — close Socket.io + Redis clients so the
-    // process exits cleanly on SIGTERM (k8s pod rotation, docker stop).
+    // Feature 16/17/18: graceful shutdown — close worker + Socket.io + Redis clients.
     process.on('SIGTERM', async () => {
         console.log('[Server] SIGTERM received, shutting down...');
+        if (gameWorker) await gameWorker.close();
         if (reconnectManager) await reconnectManager.stop();
         io.close();
         await closeRedisClients();
