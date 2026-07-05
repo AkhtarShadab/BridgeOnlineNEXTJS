@@ -19,49 +19,65 @@ import { createClient, type RedisClientType } from 'redis';
 const REDIS_URL = process.env.REDIS_URL_TEST ?? 'redis://localhost:6380';
 
 let redisReachable = false;
-let pubClient: RedisClientType | null = null;
-let subClient: RedisClientType | null = null;
+// Pool of clients created for the test servers. Each Server needs its OWN
+// pub + sub client pair — sharing a sub client across adapters makes the
+// second adapter overwrite the first's Redis subscriptions. We keep them in
+// an array so afterAll can quit them all.
+const clientPool: RedisClientType[] = [];
+
+async function makeClient(): Promise<RedisClientType> {
+  const c = createClient({
+    url: REDIS_URL,
+    socket: { connectTimeout: 2000 },
+  }) as RedisClientType;
+  await c.connect();
+  clientPool.push(c);
+  return c;
+}
 
 beforeAll(async () => {
-  // Fail fast (2s) when Redis isn't running so the hook doesn't time out.
+  // Probe Redis with a single short-timeout client. The per-server clients
+  // are created lazily inside createAdapterServer so each gets its own pair.
   try {
-    pubClient = createClient({
+    const probe = createClient({
       url: REDIS_URL,
       socket: { connectTimeout: 2000 },
     }) as RedisClientType;
-    await pubClient.connect();
-    subClient = createClient({
-      url: REDIS_URL,
-      socket: { connectTimeout: 2000 },
-    }) as RedisClientType;
-    await subClient.connect();
+    await probe.connect();
+    await probe.quit().catch(() => {});
     redisReachable = true;
   } catch {
     redisReachable = false;
-    // Null out half-connected clients so afterAll doesn't hang on quit().
-    await Promise.all([
-      pubClient?.disconnect().catch(() => {}),
-      subClient?.disconnect().catch(() => {}),
-    ]);
-    pubClient = null;
-    subClient = null;
   }
 });
 
 afterAll(async () => {
-  // disconnect() (not quit()) is safe on any state — connected or not.
-  await Promise.all([
-    pubClient?.disconnect().catch(() => {}),
-    subClient?.disconnect().catch(() => {}),
-  ]);
+  // Quit every client we created. Guard with isOpen — quit() on an
+  // already-closed client throws "Disconnects client" in redis@4.
+  await Promise.all(
+    clientPool.map((c) => (c.isOpen ? c.quit().catch(() => {}) : Promise.resolve())),
+  );
+  clientPool.length = 0;
 });
 
 function createAdapterServer(): Promise<{ io: SocketIOServer; httpServer: HTTPServer; url: string; close: () => Promise<void> }> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const httpServer = createServer();
     const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
-    // Wire the Redis adapter — both servers share the same Redis pub/sub bus.
-    io.adapter(createAdapter(pubClient!, subClient!));
+    // Each server gets its OWN pub + sub client pair. Sharing a sub client
+    // across two adapters makes the second overwrite the first's Redis
+    // subscriptions, which breaks cross-server broadcast.
+    const pub = await makeClient();
+    const sub = await makeClient();
+    io.adapter(createAdapter(pub, sub));
+    // Minimal room:join handler so client `emit('room:join', {roomId})` actually
+    // calls socket.join(roomId) on the server side. (registerSocketHandlers
+    // does more than we need here; this keeps the test focused on the adapter.)
+    io.on('connection', (socket) => {
+      socket.on('room:join', ({ roomId }: { roomId: string }) => {
+        socket.join(roomId); // join the raw room id (no 'room-' prefix in this focused test)
+      });
+    });
     httpServer.listen(0, () => {
       const addr = httpServer.address() as { port: number };
       resolve({
