@@ -106,8 +106,15 @@ export class InMemoryReconnectManager implements ReconnectManager {
 export class RedisReconnectManager implements ReconnectManager {
     private subscriber: any = null;
     private io: SocketIOServer | null = null;
+    // NOTE: an explicit field + assignment, NOT a `private` constructor
+    // parameter property. The custom server loads this file through Node's
+    // native strip-only TypeScript loader, which rejects parameter properties
+    // (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX) and would crash server startup.
+    private getRedisClient: () => Promise<any>;
 
-    constructor(private getRedisClient: () => Promise<any>) {}
+    constructor(getRedisClient: () => Promise<any>) {
+        this.getRedisClient = getRedisClient;
+    }
 
     private key(userId: string): string {
         return `game:disconnected:${userId}`;
