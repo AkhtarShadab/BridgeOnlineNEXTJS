@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { testPrisma, cleanDatabase, createTestUser, createTestRoom } from '../helpers/test-prisma';
 import { GamePhase } from '@prisma/client';
@@ -138,17 +139,41 @@ describe('Feature 15 — game_moves replay is index-only', () => {
       },
     });
 
-    // Seed 10,000 moves so the planner prefers an index-only scan over a
-    // seq scan + sort. At 200 rows the seq scan is genuinely cheaper; at 10k
-    // the covering index wins because it satisfies the ORDER BY for free.
-    await testPrisma.gameMove.createMany({
-      data: Array.from({ length: 10_000 }, (_, i) => ({
-        gameId: game.id,
-        playerId: user.id,
-        moveType: 'PLAY_CARD',
-        moveData: { card: 'AS', n: i },
-        sequenceNumber: i + 1,
+    // Seed ~10k moves spread across MANY games — mirroring production, where
+    // game_moves holds thousands of games and a single-game replay filter is
+    // highly selective. The earlier version put all 10k rows under one game_id
+    // (100% selectivity), which makes Seq Scan + Sort genuinely competitive
+    // with the covering index — so the planner's choice was a coin-flip and
+    // the test flaked (passing only when autoanalyze happened to tip it). With
+    // the target game at ~5% of rows, the covering index is the clear winner.
+    const NOISE_GAMES = 19;
+    const MOVES_PER_GAME = 500; // target + 19 noise games × 500 = 10,000 rows
+    const noiseGameIds = Array.from({ length: NOISE_GAMES }, () => randomUUID());
+    await testPrisma.game.createMany({
+      data: noiseGameIds.map((id, i) => ({
+        id,
+        gameRoomId: room.id,
+        phase: GamePhase.PLAYING,
+        boardNumber: i + 2, // distinct board numbers; target keeps board 1
+        dealerId: user.id,
+        gameState: {} as any,
       })),
+    });
+
+    const moveRow = (gameId: string, i: number) => ({
+      gameId,
+      playerId: user.id,
+      moveType: 'PLAY_CARD' as const,
+      moveData: { card: 'AS', n: i },
+      sequenceNumber: i + 1,
+    });
+    await testPrisma.gameMove.createMany({
+      data: [
+        ...Array.from({ length: MOVES_PER_GAME }, (_, i) => moveRow(game.id, i)),
+        ...noiseGameIds.flatMap((gid) =>
+          Array.from({ length: MOVES_PER_GAME }, (_, i) => moveRow(gid, i)),
+        ),
+      ],
     });
 
     // VACUUM ANALYZE so the visibility map is set (required for Index Only
