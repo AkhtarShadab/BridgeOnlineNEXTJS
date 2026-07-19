@@ -10,6 +10,19 @@ jobs:
   unit-and-socket:
     name: Layer 1 (Unit) + Layer 3 (Socket.io)
     runs-on: ubuntu-latest
+    services:
+      # Feature 16/17 socket tests (redis-adapter, reconnect-redis) connect to
+      # REDIS_URL_TEST (default redis://localhost:6380). Without Redis the
+      # reconnect-redis beforeAll hook times out and fails the suite.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +53,17 @@ jobs:
           - 5433:5432
         options: >-
           --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # Feature 17/18 DB tests (game-state-store, game-action-queue) set
+      # REDIS_URL from REDIS_URL_TEST (default redis://localhost:6380).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
