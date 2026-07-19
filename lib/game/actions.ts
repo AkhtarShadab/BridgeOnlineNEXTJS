@@ -11,7 +11,7 @@
  * re-mutating if so. This guards against retried jobs double-applying.
  */
 
-import { prisma } from '@/lib/db';
+import { prisma } from '../db';
 import { getGameStateStore, type GameState } from './gameStateStore';
 import { isBiddingComplete, isPassedOut, determineContract, type BidAction } from './bidding';
 import { isValidPlay, determineTrickWinner } from './playing';
@@ -21,7 +21,7 @@ import { incrementGamesCompleted } from '../observability/metrics';
 import { getDealerForBoard, calculateVulnerability } from './gameEngine';
 import { createDeck, shuffleDeck, dealCards, sortHand, cardToString } from './cardUtils';
 import { GamePhase } from '@prisma/client';
-import type { Card } from '@/lib/constants/cards';
+import type { Card } from '../constants/cards';
 
 export interface ActionResult {
     success: boolean;

@@ -17,8 +17,8 @@
 
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { isRedisConfigured } from '@/lib/redis';
-import { isEnabled } from '@/lib/features';
+import { isRedisConfigured } from '../redis';
+import { isEnabled } from '../features';
 
 export type GameActionType = 'bid' | 'play';
 

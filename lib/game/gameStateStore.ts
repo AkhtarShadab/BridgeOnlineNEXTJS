@@ -29,9 +29,9 @@
  * allows >1.
  */
 
-import { prisma } from '@/lib/db';
-import { isRedisConfigured, getPubClient } from '@/lib/redis';
-import { isEnabled } from '@/lib/features';
+import { prisma } from '../db';
+import { isRedisConfigured, getPubClient } from '../redis';
+import { isEnabled } from '../features';
 
 /** The shape of the JSONB `games.game_state` column. */
 export interface GameState {

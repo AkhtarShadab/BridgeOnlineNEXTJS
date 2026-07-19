@@ -18,7 +18,7 @@
 
 import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import { isRedisConfigured, getPubClient, getSubClient } from '@/lib/redis';
+import { isRedisConfigured, getPubClient, getSubClient } from '../redis';
 
 let emitter: SocketIOServer | null = null;
 

@@ -2,7 +2,7 @@
  * Bridge game engine - core game logic and state management
  */
 
-import { prisma } from '@/lib/db';
+import { prisma } from '../db';
 import { createDeck, shuffleDeck, dealCards, sortHand, type Card, cardToString } from './cardUtils';
 import { getGameStateStore, type GameState } from './gameStateStore';
 
