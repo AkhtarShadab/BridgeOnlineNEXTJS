@@ -251,7 +251,7 @@ Use short-lived HMAC-signed credentials generated server-side per session (see S
 
 ## 8. Scalability
 
-### 8.1 Redis Socket.io Adapter (P0)
+### 8.1 Redis Socket.io Adapter (P0) ✅ Feature 16
 Socket.io defaults to single-process state. Add `@socket.io/redis-adapter` so any server replica can emit to any room.
 
 ```javascript
@@ -259,26 +259,32 @@ import { createAdapter } from '@socket.io/redis-adapter';
 io.adapter(createAdapter(pubClient, subClient));
 ```
 
-### 8.2 Hot/Cold Game State (P0)
-Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions.
+Implemented in `lib/redis.ts` (singleton pub/sub client factory + `isRedisConfigured()` capability gate) and wired in `server/index.js`. **No feature flag** — the Redis *capability* (`REDIS_URL` set) is the sole gate, because a flag that disagrees with `REDIS_URL` fails silently in two of four states. Per-feature kill switches for the downstream Redis features (17 hot/cold state, 18 BullMQ) live in `lib/features.ts` as `FEATURE_HOT_COLD_STATE` / `FEATURE_ACTION_QUEUE`; they do not gate the adapter. Falls back to the in-memory adapter when `REDIS_URL` is unset (dev). **Sticky sessions still required** at the ingress for the Socket.io upgrade handshake even with the adapter — see `__tests__/socket/redis-adapter.test.ts` for the cross-replica broadcast regression guard.
 
-### 8.3 BullMQ Action Queue (P1)
-Route socket game actions through a BullMQ queue so moves are durable and retriable on server crash.
+### 8.2 Hot/Cold Game State (P0) ✅ Feature 17
+Active game state → **Redis** (fast, 4h TTL). Move log → **PostgreSQL** `game_moves` (permanent). Flush a full snapshot to `games.game_state` only on phase transitions. Implemented in `lib/game/gameStateStore.ts` (`RedisGameStateStore` / `PostgresGameStateStore`, selected by `isRedisConfigured()` + `FEATURE_HOT_COLD_STATE` kill switch). Wired into bid/play/GET routes and `gameEngine.initializeGame`. **Note:** multi-replica writes are NOT safe until Feature 18 (BullMQ) — keep API `replicas: 1`.
+
+### 8.3 BullMQ Action Queue (P1) ✅ Feature 18
+Route game actions through a BullMQ queue so moves are durable and retriable on server crash. In the as-built architecture, actions come via REST API routes (not socket events), so the queue sits in front of the route's mutation logic.
 ```
-socket event → BullMQ (Redis) → Game Worker → Socket.io broadcast
+POST /api/games/:id/{bid,play} → enqueue {actionId, gameId, userId, action} → 200 {queued, actionId}
+Game Worker (concurrency 1) → processBidAction/processPlayAction → Socket.io broadcast
 ```
+Implemented in `lib/queue/gameQueue.ts` (enqueue + `shouldUseQueue()` gate), `lib/game/actions.ts` (pure processing extracted from routes, idempotent on `actionId`), `server/gameWorker.ts` (BullMQ Worker). Kill switch: `FEATURE_ACTION_QUEUE` (default false). Idempotency: BullMQ `jobId = actionId` dedupes enqueued jobs; the processing functions also check `actionId` in stored state. Validation failures throw `UNRECOVERABLE` → dead-letter (no retry). This unblocks API `replicas: 2+` (serialized per-game writes).
 
-### 8.4 Reconnection Protocol (P1)
-On disconnect, set a 30s Redis TTL key (`player:disconnected:{userId}`). If player rejoins within grace period, restore game state from Redis and notify room. After 30s, remove seat.
+### 8.4 Reconnection Protocol (P1) ✅ Feature 17 (folds in #16 gap)
+On disconnect, set a 30s Redis TTL key (`game:disconnected:{userId}`). If player rejoins within grace period, clear the key and notify room. After 30s, keyspace notification fires `game:disconnect_timeout`. Implemented in `lib/socket/reconnect.ts` (`RedisReconnectManager` / `InMemoryReconnectManager`, selected by `isRedisConfigured()`). Cross-replica reconnect verified — a player disconnecting from server A and reconnecting to server B clears the shared Redis key.
 
-### 8.5 Service Separation (P2)
+### 8.5 Service Separation (P2) ✅ Feature 19
 Three independently deployable units sharing only Redis and PostgreSQL:
-- **Next.js** (stateless, Vercel/VPS)
-- **Socket.io server** (signaling + broadcast)
-- **Game Worker** (BullMQ consumer)
+- **Next.js** (stateless, Vercel/VPS) — `server/next.js` (`npm run start:web`)
+- **Socket.io server** (signaling + broadcast) — `server/socket.js` (`npm run start:socket`), Redis adapter + reconnection grace
+- **Game Worker** (BullMQ consumer) — `server/worker.js` (`npm run start:worker`), broadcasts via `lib/socket/emitter.ts` (broadcast-only, no listen)
 
-### 8.6 Dynamic TURN Credentials (P2)
-Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle.
+`server/index.js` remains as the all-in-one dev entry (`npm run dev`). Production runs the three split entries in separate containers. See `deploy/README.md` for the k8s manifest sketch, sticky-session ingress annotations, and replica guidance.
+
+### 8.6 Dynamic TURN Credentials (P2) ✅ Feature 20
+Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle. Implemented in `lib/voice/turn.ts` (`buildIceServers` / `signTurnCredential` / `buildTurnUsername`) + `app/api/voice/turn-credentials/route.ts` (auth-gated GET). `webrtc-manager.ts` fetches credentials on construction via `refreshTurnCredentials()`. Graceful fallback: empty `iceServers` when `TURN_URL`/`TURN_SECRET` unset (LAN/local voice). `TURN_SECRET` is server-side only; no `NEXT_PUBLIC_TURN_SECRET` exists.
 
 ### 8.7 Missing Indexes (P2) ✅ Feature 15
 Applied via raw SQL because Prisma `@@index` cannot express partial / covering / GIN. Canonical source: `lib/db/indexes.ts` (tracked) — apply with `npm run db:indexes`. The test DB re-creates them in `__tests__/helpers/db-setup.ts`. A gitignored migration mirror lives in `prisma/migrations/` for migrate-workflow environments.
@@ -292,11 +298,12 @@ CREATE INDEX idx_game_moves_covering ON game_moves(game_id, sequence_number)
 ```
 > Note: the partial predicate is `phase <> 'COMPLETED'` (covers active games), not `NOT IN ('completed')`. `loadBoardScores` filters `phase = 'COMPLETED'` and is served by the existing `@@index([gameRoomId])`; the partial index covers the complementary active-games lookups. See `__tests__/db/indexes.test.ts` for the EXPLAIN regression guards.
 
-### 8.8 Observability (P3)
-- **Sentry** — game engine exceptions + socket errors
-- **Pino** — structured logs with `gameId`/`userId` on every line
-- **Prometheus + Grafana** — active connections, games/min, queue depth
-- **`/api/health`** — DB + Redis connectivity check for uptime monitoring
+### 8.8 Observability (P3) ✅ Feature 21
+- **Sentry** — `lib/observability/sentry.ts` + `instrumentation.ts`. No-op without `SENTRY_DSN`. `captureException` + `withSentry` wrapper.
+- **Pino** — `lib/observability/logger.ts`. JSON to stdout (prod) / pretty (dev). `gameLogger(gameId, userId, requestId)` child loggers. Redacts passwordHash/TURN_SECRET/password/credential.
+- **Prometheus** — `lib/observability/metrics.ts` (prom-client). `http_requests_total`, `http_request_duration_seconds`, `socket_connections_active`, `bullmq_jobs_*`, `games_completed_total`, process metrics. Scraped at `GET /api/metrics` (no auth — ingress allowlist required).
+- **`/api/health`** — DB + Redis connectivity, 200/503. k8s liveness + readiness probe target.
+- Grafana dashboards: `deploy/grafana/` (JSON to be added). Removed the stale Sentry template comment from `prisma/schema.prisma`.
 
 ### Priority Summary
 | Priority | Enhancement |

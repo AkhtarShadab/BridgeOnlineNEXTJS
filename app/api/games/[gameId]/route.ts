@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getGameStateStore } from '@/lib/game/gameStateStore';
 
 /**
  * GET /api/games/[gameId]
@@ -81,8 +82,9 @@ export async function GET(
         // Get player's seat
         const playerSeat = player.seat;
 
-        // Get player's hand from gameState
-        const gameState = game.gameState as any;
+        // Feature 17: read hot state through the store (Redis when configured +
+        // flag on, Postgres otherwise). Falls back to the row's gameState.
+        const gameState = ((await getGameStateStore().load(gameId)) ?? (game.gameState as any)) as any;
         const hands = gameState.hands || {};
         const playerHand = hands[playerSeat] || [];
 

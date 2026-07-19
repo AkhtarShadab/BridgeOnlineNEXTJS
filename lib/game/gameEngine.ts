@@ -2,8 +2,9 @@
  * Bridge game engine - core game logic and state management
  */
 
-import { prisma } from '@/lib/db';
+import { prisma } from '../db';
 import { createDeck, shuffleDeck, dealCards, sortHand, type Card, cardToString } from './cardUtils';
+import { getGameStateStore, type GameState } from './gameStateStore';
 
 export type SeatPosition = 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
 export type GamePhase = 'INITIALIZING' | 'BIDDING' | 'PLAYING' | 'SCORING' | 'COMPLETED';
@@ -107,6 +108,19 @@ export async function initializeGame(roomId: string) {
     }
 
     // Create game record
+    const initialGameState = {
+        hands: sortedHands,
+        currentBid: null,
+        bidHistory: [],
+        tricks: [],
+        currentTrick: [],
+        trumpSuit: null,
+        contract: null,
+        vulnerability,
+        dealer,
+        passCount: 0,
+    } as object;
+
     const game = await prisma.game.create({
         data: {
             gameRoomId: roomId,
@@ -114,21 +128,15 @@ export async function initializeGame(roomId: string) {
             boardNumber,
             dealerId: dealerPlayer.userId,
             currentPlayerId: dealerPlayer.userId, // Dealer starts bidding
-            gameState: {
-                hands: sortedHands,
-                currentBid: null,
-                bidHistory: [],
-                tricks: [],
-                currentTrick: [],
-                trumpSuit: null,
-                contract: null,
-                vulnerability,
-                dealer,
-                passCount: 0,
-            } as object,
+            gameState: initialGameState,
             deck: shuffledDeck.map(cardToString), // Store deck for verification
         },
     });
+
+    // Feature 17: seed the hot state store so the first bid reads from Redis
+    // (or Postgres — the store handles both). The game row was just created with
+    // the initial state, so the store's save mirrors it into the hot layer.
+    await getGameStateStore().save(game.id, initialGameState as GameState, { phaseTransition: false });
 
     // Update game players to link to this game
     await prisma.gamePlayer.updateMany({
