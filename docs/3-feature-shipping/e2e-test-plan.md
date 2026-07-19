@@ -5,7 +5,7 @@
 **Status:** 📋 Planned
 **Owner:** Shadab
 
-Adds Playwright UI tests for the game-flow surface that is currently unverified end-to-end. Each gap in the coverage table below maps to an already-shipped feature in `BaseFeatureManager.md`.
+Adds Playwright UI tests for the game-flow surface that is currently unverified end-to-end. Each gap in the coverage table below maps to an already-shipped feature in the feature registry ([README.md](./README.md)).
 
 ---
 
@@ -321,4 +321,4 @@ FEATURE_AI_HINTS=true
 
 - All nine spec files pass locally via `npm run test:e2e` against the dockerized test DB.
 - No production source changed except (if required) an added `data-testid` — none currently anticipated.
-- `BaseFeatureManager.md` updated: add a "Tests" column note for 06–12.
+- the feature registry ([README.md](./README.md)) updated: add a "Tests" column note for 06–12.

@@ -1,7 +1,7 @@
 # Feature 19 — Service Separation Deployment
 
 Three independently deployable units sharing only Redis + PostgreSQL.
-See `docs/design-document.md` §8.5 + §10.
+See [../design-document.md](../design-document.md) §8.5 + §10.
 
 ## Services
 

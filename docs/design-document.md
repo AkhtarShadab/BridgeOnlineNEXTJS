@@ -281,7 +281,7 @@ Three independently deployable units sharing only Redis and PostgreSQL:
 - **Socket.io server** (signaling + broadcast) — `server/socket.js` (`npm run start:socket`), Redis adapter + reconnection grace
 - **Game Worker** (BullMQ consumer) — `server/worker.js` (`npm run start:worker`), broadcasts via `lib/socket/emitter.ts` (broadcast-only, no listen)
 
-`server/index.js` remains as the all-in-one dev entry (`npm run dev`). Production runs the three split entries in separate containers. See `deploy/README.md` for the k8s manifest sketch, sticky-session ingress annotations, and replica guidance.
+`server/index.js` remains as the all-in-one dev entry (`npm run dev`). Production runs the three split entries in separate containers. See [docs/2-deployment-guide/service-separation.md](./2-deployment-guide/service-separation.md) for the k8s manifest sketch, sticky-session ingress annotations, and replica guidance.
 
 ### 8.6 Dynamic TURN Credentials (P2) ✅ Feature 20
 Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle. Implemented in `lib/voice/turn.ts` (`buildIceServers` / `signTurnCredential` / `buildTurnUsername`) + `app/api/voice/turn-credentials/route.ts` (auth-gated GET). `webrtc-manager.ts` fetches credentials on construction via `refreshTurnCredentials()`. Graceful fallback: empty `iceServers` when `TURN_URL`/`TURN_SECRET` unset (LAN/local voice). `TURN_SECRET` is server-side only; no `NEXT_PUBLIC_TURN_SECRET` exists.

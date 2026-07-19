@@ -76,16 +76,21 @@ BridgeOnline/
 ├── server/               # Socket.io server
 ├── types/                # TypeScript type definitions
 └── docs/                 # Project documentation
-    ├── design-document.md # Architecture and system design
-    └── testing-guide.md  # Testing layers and setup
+    ├── design-document.md      # Architecture and system design
+    ├── 1-local-testing-guide/  # Run & test locally + observability
+    ├── 2-deployment-guide/     # Cost tiers, AWS, Kubernetes, scaling, observability
+    └── 3-feature-shipping/     # Feature registry & E2E test plans
 ```
 
 ## Documentation
 
-All project documentation lives in [`docs/`](docs/):
+All project documentation lives in [`docs/`](docs/) — start at the
+[docs index](docs/README.md):
 
 - [Design Document](docs/design-document.md) — architecture, data model, real-time design
-- [Testing Guide](docs/testing-guide.md) — unit, integration, E2E, and WebRTC test setup
+- [Local Testing Guide](docs/1-local-testing-guide/) — install, run (tsx), all test suites, manual play-test, [local Kubernetes](docs/1-local-testing-guide/kubernetes-local.md), [observability](docs/1-local-testing-guide/observability.md)
+- [Deployment Guide](docs/2-deployment-guide/) — [cost tiers](docs/2-deployment-guide/README.md), [AWS](docs/2-deployment-guide/aws.md), [service separation](docs/2-deployment-guide/service-separation.md), [observability](docs/2-deployment-guide/observability.md)
+- [Feature Shipping](docs/3-feature-shipping/) — feature registry & E2E test plans
 
 ## How to Play
 

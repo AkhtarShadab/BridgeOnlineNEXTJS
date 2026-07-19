@@ -3,7 +3,7 @@
  *
  * Exposes counters + histograms for HTTP, Socket.io, BullMQ, and DB/Redis
  * health. Scraped at GET /api/metrics (no auth — protect via ingress allowlist
- * in production; see deploy/README.md).
+ * in production; see docs/2-deployment-guide/observability.md).
  *
  * Usage:
  *   import { metricsRegistry, incrementGamesCompleted, observeHttpRequest } from '@/lib/observability/metrics';
