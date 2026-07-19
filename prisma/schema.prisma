@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature 15 — indexes not expressible in @@index syntax
+// Three indexes from design doc §8.7 (partial composite on games, GIN on
+// users.stats, covering on game_moves) are applied as raw SQL because Prisma's
+// @@index does not support WHERE clauses, INCLUDE columns, or GIN.
+// Canonical source: lib/db/indexes.ts (tracked). Apply with `npm run db:indexes`.
+// The test DB applies them via __tests__/helpers/db-setup.ts.
+// A gitignored migration mirror lives in prisma/migrations/ for migrate-workflow envs.
+// ─────────────────────────────────────────────────────────────────────────────
+
 generator client {
   provider = "prisma-client-js"
 }

@@ -286,14 +286,17 @@ Three independently deployable units sharing only Redis and PostgreSQL:
 ### 8.6 Dynamic TURN Credentials (P2) ✅ Feature 20
 Generate per-session HMAC-SHA1 credentials server-side via `/api/voice/turn-credentials`. Never expose static TURN secrets in the client bundle. Implemented in `lib/voice/turn.ts` (`buildIceServers` / `signTurnCredential` / `buildTurnUsername`) + `app/api/voice/turn-credentials/route.ts` (auth-gated GET). `webrtc-manager.ts` fetches credentials on construction via `refreshTurnCredentials()`. Graceful fallback: empty `iceServers` when `TURN_URL`/`TURN_SECRET` unset (LAN/local voice). `TURN_SECRET` is server-side only; no `NEXT_PUBLIC_TURN_SECRET` exists.
 
-### 8.7 Missing Indexes (P2)
+### 8.7 Missing Indexes (P2) ✅ Feature 15
+Applied via raw SQL because Prisma `@@index` cannot express partial / covering / GIN. Canonical source: `lib/db/indexes.ts` (tracked) — apply with `npm run db:indexes`. The test DB re-creates them in `__tests__/helpers/db-setup.ts`. A gitignored migration mirror lives in `prisma/migrations/` for migrate-workflow environments.
 ```sql
+-- partial: serves the active-games-in-a-room path (phase <> COMPLETED)
 CREATE INDEX idx_games_room_phase ON games(game_room_id, phase)
-  WHERE phase NOT IN ('completed');
+  WHERE phase <> 'COMPLETED';
 CREATE INDEX idx_users_stats_gin ON users USING gin(stats);
 CREATE INDEX idx_game_moves_covering ON game_moves(game_id, sequence_number)
   INCLUDE (move_type, move_data);
 ```
+> Note: the partial predicate is `phase <> 'COMPLETED'` (covers active games), not `NOT IN ('completed')`. `loadBoardScores` filters `phase = 'COMPLETED'` and is served by the existing `@@index([gameRoomId])`; the partial index covers the complementary active-games lookups. See `__tests__/db/indexes.test.ts` for the EXPLAIN regression guards.
 
 ### 8.8 Observability (P3) ✅ Feature 21
 - **Sentry** — `lib/observability/sentry.ts` + `instrumentation.ts`. No-op without `SENTRY_DSN`. `captureException` + `withSentry` wrapper.
