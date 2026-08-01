@@ -5,12 +5,11 @@ import { logger } from '@/lib/observability/logger';
 
 /**
  * GET /api/health
- * Liveness + readiness probe target for k8s. Returns DB + Redis connectivity.
- *   200 { status: 'ok', db: 'up', redis: 'up'|'n/a', ts }
- *   503 { status: 'degraded', db: 'down'|'up', redis: 'down'|'up'|'n/a', ts }
+ * Liveness probe: always 200 if the process responds.
+ * Body includes db/redis readiness so operators can still see connectivity.
  *
- * Uses a short timeout per check so probes don't hang. The Redis check is
- * skipped (returns 'n/a') when REDIS_URL is unset — that's a valid dev state.
+ * (Render free deploys were timing out when DATABASE_URL was wrong and this
+ * endpoint returned 503 — keep probes from blocking process start.)
  */
 export async function GET() {
     const ts = new Date().toISOString();
@@ -38,6 +37,6 @@ export async function GET() {
     const ok = db === 'up' && (redis === 'up' || redis === 'n/a');
     return NextResponse.json(
         { status: ok ? 'ok' : 'degraded', db, redis, ts },
-        { status: ok ? 200 : 503 },
+        { status: 200 },
     );
 }
