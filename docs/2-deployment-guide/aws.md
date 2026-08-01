@@ -1,6 +1,10 @@
 # BridgeOnline — AWS Deployment (concrete)
 
 > Companion to [the deployment guide](./README.md); assumes its tiers, image build (§2), and pre-flight checklist (§7).
+>
+> **Using AWS free credits for Redis / higher game TPS?** Start with the shorter guide:
+> [aws-redis-credits.md](./aws-redis-credits.md) (Lightsail/EC2 + Redis, keep Supabase).
+> Branch: **`AWSDep`** · env template: [`deploy/aws/env.aws.template`](../../deploy/aws/env.aws.template).
 
 ## 8. Deploying on AWS (concrete)
 
