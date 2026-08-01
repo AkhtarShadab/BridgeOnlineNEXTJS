@@ -17,13 +17,19 @@ services:
     region: singapore
     branch: RenderSupabase
     healthCheckPath: /api/health
-    buildCommand: npm ci --legacy-peer-deps && npx prisma generate && npx prisma db push && npm run build
+    # Use the repo-pinned Prisma 6 CLI (not npx's latest Prisma 7).
+    # Install build tooling even when NODE_ENV=production on the service.
+    buildCommand: npm ci --legacy-peer-deps --include=dev && npm run db:generate && npx prisma db push && npm run build
     startCommand: npm run start:all
     envVars:
       - key: NODE_VERSION
         value: "22"
       - key: NODE_ENV
         value: production
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
+      - key: NEXTAUTH_URL
+        value: https://bridgeonline.onrender.com
       # Prisma: use Supabase "Transaction" pooler URL for DATABASE_URL
       # and the direct (non-pooler) URI for DIRECT_URL.
       - key: DATABASE_URL
@@ -32,9 +38,6 @@ services:
         sync: false
       - key: NEXTAUTH_SECRET
         generateValue: true
-      # Set after first deploy to https://<your-service>.onrender.com
-      - key: NEXTAUTH_URL
-        sync: false
       # Optional override; leave unset to use window.location.origin
       - key: NEXT_PUBLIC_SOCKET_URL
         sync: false
