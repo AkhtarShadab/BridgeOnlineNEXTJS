@@ -17,9 +17,10 @@ services:
     region: singapore
     branch: RenderSupabase
     healthCheckPath: /api/health
-    # Use the repo-pinned Prisma 6 CLI (not npx's latest Prisma 7).
-    # Install build tooling even when NODE_ENV=production on the service.
-    buildCommand: npm ci --legacy-peer-deps --include=dev && npm run db:generate && npx prisma db push && npm run build
+    # Schema is already applied on Supabase — do not run db push at build time
+    # (Render often cannot reach db.*.supabase.co:5432 / IPv6). Use the pooler URL
+    # for DATABASE_URL at runtime. Generate only needs the local Prisma 6 CLI.
+    buildCommand: npm ci --legacy-peer-deps --include=dev && npm run db:generate && npm run build
     startCommand: npm run start:all
     envVars:
       - key: NODE_VERSION

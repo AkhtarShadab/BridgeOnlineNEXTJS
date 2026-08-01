@@ -28,12 +28,15 @@ You do **not** need Supabase Auth — BridgeOnline keeps NextAuth.
 2. Copy or **reset** the database password.
 3. Fill `YOUR_DB_PASSWORD` in [`env.supabase.template`](./env.supabase.template) → paste into Render env vars.
 
-Ready-made URL shapes (password only missing):
+Ready-made URL shapes (password only missing). **Use the pooler host** — Render cannot reliably reach `db.*.supabase.co`:
 
 ```
 DATABASE_URL=postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-DIRECT_URL=postgresql://postgres:YOUR_DB_PASSWORD@db.zxglihcentjhwwxqkprb.supabase.co:5432/postgres
+DIRECT_URL=postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+NEXTAUTH_URL=https://bridgeonline.onrender.com
 ```
+
+In the Supabase dashboard, copy **Connection pooling → Transaction** for `DATABASE_URL`, and **Session** mode (same pooler host, port 5432) for `DIRECT_URL`.
 
 ## 2. Render Web Service
 
