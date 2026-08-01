@@ -11,6 +11,7 @@
     "start:socket": "tsx server/socket.js",
     "start:worker": "tsx server/worker.js",
     "start:all": "tsx server/index.js",
+    "start:render": "tsx server/index.js",
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:indexes": "dotenv -e .env -- node --experimental-strip-types scripts/apply-indexes.ts",

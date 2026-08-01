@@ -1,0 +1,55 @@
+# Render Blueprint — BridgeOnline (friends / hobby deploy)
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploy: connect this repo in Render Dashboard → New → Blueprint
+# and select branch `RenderSupabase`. Or create a Web Service manually
+# using the build/start commands below.
+#
+# Required secrets (set in Render Dashboard → Environment):
+#   DATABASE_URL, DIRECT_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+# Optional: NEXT_PUBLIC_SOCKET_URL (defaults to same origin in the browser)
+
+services:
+  - type: web
+    name: bridgeonline
+    runtime: node
+    plan: free
+    region: singapore
+    branch: RenderSupabase
+    healthCheckPath: /api/health
+    buildCommand: npm ci --legacy-peer-deps && npx prisma generate && npx prisma db push && npm run build
+    startCommand: npm run start:all
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Prisma: use Supabase "Transaction" pooler URL for DATABASE_URL
+      # and the direct (non-pooler) URI for DIRECT_URL.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      # Set after first deploy to https://<your-service>.onrender.com
+      - key: NEXTAUTH_URL
+        sync: false
+      # Optional override; leave unset to use window.location.origin
+      - key: NEXT_PUBLIC_SOCKET_URL
+        sync: false
+      # Hobby deploy: single replica, no Redis / queue / voice TURN
+      - key: FEATURE_VOICE_CHAT
+        value: "false"
+      - key: NEXT_PUBLIC_FEATURE_VOICE_CHAT
+        value: "false"
+      - key: FEATURE_AI_HINTS
+        value: "false"
+      - key: FEATURE_RECONNECT_GRACE
+        value: "true"
+      - key: NEXT_PUBLIC_FEATURE_RECONNECT_GRACE
+        value: "true"
+      - key: FEATURE_HOT_COLD_STATE
+        value: "false"
+      - key: FEATURE_ACTION_QUEUE
+        value: "false"

@@ -32,7 +32,8 @@ app.prepare().then(async () => {
 
     const io = new SocketIOServer(server, {
         cors: {
-            origin: '*', // Allow all origins for local network testing
+            // Prefer SOCKET_CORS_ORIGIN in production (your Render URL); * for local/dev.
+            origin: process.env.SOCKET_CORS_ORIGIN ?? '*',
             methods: ['GET', 'POST'],
         },
     });

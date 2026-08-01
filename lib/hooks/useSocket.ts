@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getSocketUrl } from '@/lib/socket-url';
 
 interface UseSocketOptions {
     roomId?: string;
@@ -21,15 +22,12 @@ export function useSocket(options: UseSocketOptions = {}) {
     useEffect(() => {
         if (!enabled) return;
 
-        const newSocket = io(
-            process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000',
-            {
+        const newSocket = io(getSocketUrl(), {
                 autoConnect: true,
                 reconnection: true,
                 reconnectionDelay: 1000,
                 reconnectionAttempts: 5,
-            }
-        );
+            });
 
         newSocket.on('connect', () => {
             console.log('Socket connected:', newSocket.id);
