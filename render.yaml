@@ -29,6 +29,8 @@ services:
         value: production
       - key: NPM_CONFIG_PRODUCTION
         value: "false"
+      - key: AUTH_TRUST_HOST
+        value: "true"
       - key: NEXTAUTH_URL
         value: https://bridgeonline.onrender.com
       # Prisma: use Supabase "Transaction" pooler URL for DATABASE_URL

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+    // Required behind Render / reverse proxies (Auth.js UntrustedHost otherwise).
+    trustHost: true,
     adapter: PrismaAdapter(prisma),
     session: { strategy: "jwt" },
     pages: {
