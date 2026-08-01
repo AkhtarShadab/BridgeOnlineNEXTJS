@@ -444,7 +444,7 @@ export default function RoomPage() {
                             <button
                                 onClick={handleMicClick}
                                 className={`px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${!isJoined ? "bg-surface-elevated border border-border text-text-muted" :
-                                    isMuted ? "bg-red-900/30 text-red-400 hover:bg-red-900/50" :
+                                    isMuted ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50" :
                                         "bg-accent/10 text-accent hover:bg-accent/20"
                                     }`}
                                 title={!isJoined ? "Enable Voice Chat" : isMuted ? "Unmute Microphone" : "Mute Microphone"}

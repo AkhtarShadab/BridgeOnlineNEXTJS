@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { ScoreBreakdown } from "@/lib/game/scoring";
 import type { Seat } from "@/components/game/PlayingTable";
+import { fireConfetti } from "@/components/ui/confetti";
 
 interface BoardScore {
     boardNumber: number;
@@ -22,6 +24,8 @@ interface ScoreCardProps {
     vulnerability?: { NS: boolean; EW: boolean };
     boardScores?: BoardScore[];
     hasNextBoard?: boolean;
+    /** Which side the viewer sits on — enables the confetti celebration. Null/undefined for spectators. */
+    viewerTeam?: "NS" | "EW" | null;
     onNextBoard?: () => void;
     onBackToDashboard?: () => void;
 }
@@ -78,9 +82,27 @@ export default function ScoreCard({
     vulnerability,
     boardScores = [],
     hasNextBoard = false,
+    viewerTeam,
     onNextBoard,
     onBackToDashboard,
 }: ScoreCardProps) {
+    // Confetti when the viewer's team won this board. Fired once per board —
+    // the component stays mounted across the multi-board next_board flow, so
+    // the guard is keyed on boardNumber, not mount.
+    const confettiFiredForBoard = useRef<number | null>(null);
+    useEffect(() => {
+        if (!viewerTeam || !result) return;
+        if (confettiFiredForBoard.current === boardNumber) return;
+        const board = boardScores.find((b) => b.boardNumber === boardNumber);
+        const ns = board ? board.scoreNS : scoreNS;
+        const ew = board ? board.scoreEW : scoreEW;
+        const viewerWon = viewerTeam === "NS" ? ns > ew : ew > ns;
+        if (viewerWon) {
+            confettiFiredForBoard.current = boardNumber;
+            fireConfetti();
+        }
+    }, [boardNumber, result, viewerTeam, boardScores, scoreNS, scoreEW]);
+
     return (
         <div data-testid="score-card" className="bg-surface border border-border rounded-2xl shadow-xl p-6">
             <h2 className="text-2xl font-bold text-accent mb-2">🏁 Board {boardNumber} Complete</h2>
@@ -97,7 +119,7 @@ export default function ScoreCard({
                     <span className="text-sm text-text-muted">by {declarerName}</span>
                 )}
                 <span className="text-sm text-text-muted">·</span>
-                <span className={`text-sm font-semibold ${result?.contractMade ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm font-semibold ${result?.contractMade ? 'bt-text-made' : 'bt-text-down'}`}>
                     {formatResult(result)}
                 </span>
                 {result && (
@@ -152,7 +174,7 @@ export default function ScoreCard({
                                                 <td className={`py-1.5 ${suitColor(b.contract?.suit ?? '')}`}>
                                                     {formatContract(b.contract)}
                                                 </td>
-                                                <td className={`py-1.5 text-xs ${b.result?.contractMade ? 'text-green-400' : 'text-red-400'}`}>
+                                                <td className={`py-1.5 text-xs ${b.result?.contractMade ? 'bt-text-made' : 'bt-text-down'}`}>
                                                     {b.result ? (b.result.contractMade ? (b.result.overtricks > 0 ? `+${b.result.overtricks}` : '✓') : `-${b.result.undertricks}`) : '—'}
                                                 </td>
                                                 <td className="py-1.5 text-right">{b.scoreNS}</td>

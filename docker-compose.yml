@@ -1,0 +1,54 @@
+# BridgeOnline — local stack (app + Postgres only, no Redis).
+# Redis-backed features (reconnect grace, hot/cold state, action queue) fall
+# back to in-memory (fine for single-container local dev).
+# For test-only infra (unit/DB/socket test suites) use docker-compose.test.yml instead.
+#
+#   docker compose up --build
+#
+# Data is persisted in a named volume; `docker compose down -v` wipes it.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bridge
+      POSTGRES_PASSWORD: bridge
+      POSTGRES_DB: bridge
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bridge']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SOCKET_URL: http://localhost:3000
+        NEXT_PUBLIC_FEATURE_NEW_UI: 'true'
+        NEXT_PUBLIC_FEATURE_VOICE_CHAT: 'false'
+        NEXT_PUBLIC_FEATURE_AI_HINTS: 'false'
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://bridge:bridge@db:5432/bridge?schema=public
+      DIRECT_URL: postgresql://bridge:bridge@db:5432/bridge?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: local-dev-secret-change-me-0123456789abcd
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:3000
+      FEATURE_RECONNECT_GRACE: 'false'
+      FEATURE_HOT_COLD_STATE: 'false'
+      FEATURE_ACTION_QUEUE: 'false'
+      FEATURE_VOICE_CHAT: 'false'
+      FEATURE_NEW_UI: 'true'
+      LOG_LEVEL: info
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npx prisma db push --skip-generate && npm run start:all"
+
+volumes:
+  db-data:

@@ -29,6 +29,10 @@ export default {
                 'card-deal': 'cardDeal 0.5s ease-out',
                 'card-play': 'cardPlay 0.3s ease-in-out',
                 'trick-collect': 'trickCollect 0.5s ease-in',
+                // Magic UI — shimmer-button + animated-gradient-text
+                'shimmer-slide': 'shimmer-slide var(--speed) ease-in-out infinite alternate',
+                'spin-around': 'spin-around calc(var(--speed) * 2) infinite linear',
+                gradient: 'gradient 8s linear infinite',
             },
             keyframes: {
                 cardDeal: {
@@ -42,6 +46,20 @@ export default {
                 trickCollect: {
                     '0%': { transform: 'scale(1)', opacity: '1' },
                     '100%': { transform: 'scale(0.5)', opacity: '0' },
+                },
+                // Magic UI — shimmer-button
+                'shimmer-slide': {
+                    to: { transform: 'translate(calc(100cqw - 100%), 0)' },
+                },
+                'spin-around': {
+                    '0%': { transform: 'translateZ(0) rotate(0)' },
+                    '15%, 35%': { transform: 'translateZ(0) rotate(90deg)' },
+                    '65%, 85%': { transform: 'translateZ(0) rotate(270deg)' },
+                    '100%': { transform: 'translateZ(0) rotate(360deg)' },
+                },
+                // Magic UI — animated-gradient-text
+                gradient: {
+                    to: { backgroundPosition: 'var(--bg-size, 300%) 0' },
                 },
             },
         },

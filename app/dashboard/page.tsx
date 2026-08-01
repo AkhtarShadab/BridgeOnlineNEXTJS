@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { ActiveRoomChecker } from "@/components/ActiveRoomChecker";
 import { prisma } from "@/lib/db";
 import { normalizeStats, winRatePct } from "@/lib/game/stats";
+import { NumberTicker } from "@/components/ui/number-ticker";
+import { MagicCard } from "@/components/ui/magic-card";
+import { BlurFade } from "@/components/ui/blur-fade";
 
 export default async function DashboardPage() {
     const session = await auth();
@@ -49,20 +52,42 @@ export default async function DashboardPage() {
                     </div>
 
                     {/* Stats strip */}
+                    <BlurFade delay={0.1}>
                     <div
                         data-testid="stats-strip"
                         className="flex gap-8 items-center bg-surface border border-border rounded-xl px-6 py-4 mb-8"
                     >
+                        {/* NumberTicker animates only the last stretch (startValue) so the
+                            spring settles fast — large jumps (e.g. 0→100%) would otherwise
+                            still be mid-count when e2e's 5s toHaveText window closes. */}
                         <div className="text-center">
                             <div data-testid="games-played" className="halo-metric text-2xl font-bold text-accent">
-                                {stats.gamesPlayed}
+                                {stats.gamesPlayed === 0 ? (
+                                    "0"
+                                ) : (
+                                    <NumberTicker
+                                        value={stats.gamesPlayed}
+                                        startValue={Math.max(0, stats.gamesPlayed - 15)}
+                                        className="text-accent"
+                                    />
+                                )}
                             </div>
                             <div className="halo-eyebrow mt-1">Games Played</div>
                         </div>
                         <div className="w-px h-8 bg-border" />
                         <div className="text-center">
                             <div data-testid="win-rate" className="halo-metric text-2xl font-bold text-accent">
-                                {winRate === null ? "—" : `${winRate}%`}
+                                {winRate === null ? (
+                                    "—"
+                                ) : (
+                                    <>
+                                        <NumberTicker
+                                            value={winRate}
+                                            startValue={Math.max(0, winRate - 15)}
+                                            className="text-accent"
+                                        />%
+                                    </>
+                                )}
                             </div>
                             <div className="halo-eyebrow mt-1">Win Rate</div>
                         </div>
@@ -78,10 +103,13 @@ export default async function DashboardPage() {
                             <div className="halo-eyebrow mt-1">Rank</div>
                         </div>
                     </div>
+                    </BlurFade>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* User Profile Card */}
-                        <div className="bg-surface border border-border p-6 rounded-2xl">
+                        <BlurFade delay={0.15}>
+                        <MagicCard className="rounded-2xl h-full">
+                            <div className="p-6">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Your Profile
                             </h2>
@@ -93,10 +121,14 @@ export default async function DashboardPage() {
                                     <span className="font-semibold text-foreground">Email:</span> {session.user.email}
                                 </p>
                             </div>
-                        </div>
+                            </div>
+                        </MagicCard>
+                        </BlurFade>
 
                         {/* Create Room Card */}
-                        <div className="bg-surface border border-border p-6 rounded-2xl">
+                        <BlurFade delay={0.2}>
+                        <MagicCard className="rounded-2xl h-full">
+                            <div className="p-6">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 New Game
                             </h2>
@@ -109,10 +141,14 @@ export default async function DashboardPage() {
                             >
                                 Create Room
                             </a>
-                        </div>
+                            </div>
+                        </MagicCard>
+                        </BlurFade>
 
                         {/* Join Room Card */}
-                        <div className="bg-surface border border-border p-6 rounded-2xl">
+                        <BlurFade delay={0.25}>
+                        <MagicCard className="rounded-2xl h-full">
+                            <div className="p-6">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Join Game
                             </h2>
@@ -125,10 +161,14 @@ export default async function DashboardPage() {
                             >
                                 Join Room
                             </a>
-                        </div>
+                            </div>
+                        </MagicCard>
+                        </BlurFade>
 
                         {/* Room Invitations Card */}
-                        <div className="bg-surface border border-border p-6 rounded-2xl">
+                        <BlurFade delay={0.3}>
+                        <MagicCard className="rounded-2xl h-full">
+                            <div className="p-6">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Room Invitations
                             </h2>
@@ -141,10 +181,14 @@ export default async function DashboardPage() {
                             >
                                 View Invitations
                             </a>
-                        </div>
+                            </div>
+                        </MagicCard>
+                        </BlurFade>
 
                         {/* Friends Card */}
-                        <div className="bg-surface border border-border p-6 rounded-2xl">
+                        <BlurFade delay={0.35}>
+                        <MagicCard className="rounded-2xl h-full">
+                            <div className="p-6">
                             <h2 className="text-2xl font-bold text-foreground mb-4">
                                 Friends
                             </h2>
@@ -157,7 +201,9 @@ export default async function DashboardPage() {
                             >
                                 View Friends
                             </a>
-                        </div>
+                            </div>
+                        </MagicCard>
+                        </BlurFade>
                     </div>
 
                     {/* How to Play Section */}

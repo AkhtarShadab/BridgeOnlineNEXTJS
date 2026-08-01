@@ -51,20 +51,39 @@ export default function GamePage() {
     const [error, setError] = useState<string | null>(null);
 
     // Table appearance settings (persisted in localStorage)
+    const TABLE_SETTINGS_DEFAULTS = {
+        visible: false,
+        fanStyle: 'fan' as const,
+        rake: 52,
+        speed: 1,
+        feltTheme: 'navy' as const,
+        movable: false,
+        seatOffsets: {} as Partial<Record<Seat, { dx: number; dy: number }>>,
+    };
     const [tableSettings, setTableSettings] = useState<{
         visible: boolean;
         fanStyle: 'fan' | 'tilt' | 'flat';
         rake: number;
         speed: number;
+        feltTheme: 'navy' | 'green' | 'crimson';
+        movable: boolean;
+        seatOffsets: Partial<Record<Seat, { dx: number; dy: number }>>;
     }>(() => {
         try {
             const saved = localStorage.getItem('table:settings');
-            return saved ? JSON.parse(saved) : { visible: false, fanStyle: 'fan', rake: 52, speed: 1 };
-        } catch { return { visible: false, fanStyle: 'fan', rake: 52, speed: 1 }; }
+            return saved ? { ...TABLE_SETTINGS_DEFAULTS, ...JSON.parse(saved) } : TABLE_SETTINGS_DEFAULTS;
+        } catch { return TABLE_SETTINGS_DEFAULTS; }
     });
     const updateTableSetting = (key: string, value: any) => {
         setTableSettings(prev => {
             const next = { ...prev, [key]: value };
+            try { localStorage.setItem('table:settings', JSON.stringify(next)); } catch {}
+            return next;
+        });
+    };
+    const updateSeatOffset = (seat: Seat, offset: { dx: number; dy: number }) => {
+        setTableSettings(prev => {
+            const next = { ...prev, seatOffsets: { ...prev.seatOffsets, [seat]: offset } };
             try { localStorage.setItem('table:settings', JSON.stringify(next)); } catch {}
             return next;
         });
@@ -877,14 +896,35 @@ export default function GamePage() {
                                         />
                                         <span className="text-xs text-foreground w-6">{tableSettings.speed.toFixed(1)}x</span>
                                     </div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-text-muted font-medium">Felt:</label>
+                                        {(['navy', 'green', 'crimson'] as const).map(t => (
+                                            <button key={t}
+                                                onClick={() => updateTableSetting('feltTheme', t)}
+                                                className={`px-2.5 py-1 text-xs rounded-md font-medium capitalize transition-colors ${tableSettings.feltTheme === t
+                                                    ? 'bg-accent text-background'
+                                                    : 'bg-surface-elevated text-text-muted border border-border hover:text-foreground'
+                                                    }`}
+                                            >{t}</button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => updateTableSetting('movable', !tableSettings.movable)}
+                                            className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${tableSettings.movable
+                                                ? 'bg-accent text-background'
+                                                : 'bg-surface-elevated text-text-muted border border-border hover:text-foreground'
+                                                }`}
+                                        >{tableSettings.movable ? 'Move tags: on' : 'Move tags: off'}</button>
+                                    </div>
                                     <button
                                         onClick={() => {
-                                            const reset = { fanStyle: 'fan' as const, rake: 52, speed: 1 };
+                                            const reset = { fanStyle: 'fan' as const, rake: 52, speed: 1, seatOffsets: {} };
                                             setTableSettings(prev => ({ ...prev, ...reset }));
                                             try { localStorage.setItem('table:settings', JSON.stringify({ ...tableSettings, ...reset })); } catch {}
                                         }}
                                         className="px-2.5 py-1 text-xs text-text-muted hover:text-foreground border border-border rounded-md"
-                                    >Reset</button>
+                                    >Reset layout</button>
                                 </div>
                             )}
 
@@ -912,6 +952,10 @@ export default function GamePage() {
                                 fanStyle={tableSettings.fanStyle}
                                 rake={tableSettings.rake}
                                 speed={tableSettings.speed}
+                                feltTheme={tableSettings.feltTheme}
+                                movable={tableSettings.movable}
+                                seatOffsets={tableSettings.seatOffsets}
+                                onSeatOffsetChange={updateSeatOffset}
                                 onPlayCard={handlePlayCard}
                             />
                             {isEnabled("aiHints") && (
@@ -926,6 +970,14 @@ export default function GamePage() {
                 {/* Completed phase — show rich score card (Feature 10) */}
                 {game.phase === 'COMPLETED' && (() => {
                     const hasNextBoard = !!(game as any).nextGameId;
+                    // Viewer's side (for the win celebration): N/S seats → NS, E/W → EW, spectator → null.
+                    const myRawSeat = (game.players as any[])?.find((p: any) => p.userId === session?.user?.id)?.seat as string | undefined;
+                    const mySeat = myRawSeat ? FULL_TO_SEAT[myRawSeat] : undefined;
+                    const viewerTeam = mySeat === 'N' || mySeat === 'S'
+                        ? 'NS' as const
+                        : mySeat === 'E' || mySeat === 'W'
+                            ? 'EW' as const
+                            : null;
                     return (
                         <ScoreCard
                             boardNumber={game.boardNumber}
@@ -938,6 +990,7 @@ export default function GamePage() {
                             vulnerability={game.vulnerability}
                             boardScores={(game as any).boardScores ?? []}
                             hasNextBoard={hasNextBoard}
+                            viewerTeam={viewerTeam}
                             onBackToDashboard={() => router.push('/dashboard')}
                         />
                     );

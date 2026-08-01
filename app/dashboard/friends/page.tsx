@@ -296,7 +296,7 @@ export default function FriendsPage() {
                                                 className="p-4 border border-border rounded-lg flex justify-between items-center"
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-12 h-12 bg-surface-elevated rounded-full flex items-center justify-center text-white font-bold text-xl">
+                                                    <div className="w-12 h-12 bg-surface-elevated rounded-full flex items-center justify-center text-foreground font-bold text-xl">
                                                         {request.requester.username[0].toUpperCase()}
                                                     </div>
                                                     <div>
@@ -343,7 +343,7 @@ export default function FriendsPage() {
                                                 className="p-4 border border-border rounded-lg flex justify-between items-center"
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-12 h-12 bg-surface-elevated rounded-full flex items-center justify-center text-white font-bold text-xl">
+                                                    <div className="w-12 h-12 bg-surface-elevated rounded-full flex items-center justify-center text-foreground font-bold text-xl">
                                                         {request.addressee.username[0].toUpperCase()}
                                                     </div>
                                                     <div>

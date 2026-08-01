@@ -70,7 +70,7 @@ export default function CreateRoomPage() {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-2xl  p-8">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-400">
+                        <div className="mb-6 p-4 bg-red-100 border border-red-300 text-red-700 rounded-lg dark:bg-red-900/30 dark:border-red-700 dark:text-red-400">
                             {error}
                         </div>
                     )}

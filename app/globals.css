@@ -2,21 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light theme (default :root). The dark navy palette lives in html.dark below;
+   an inline no-flash script in app/layout.tsx applies .dark before first paint
+   (dark is the default for new visitors). The in-game table is ALWAYS dark —
+   see .table-theme, which re-declares every token regardless of html class. */
 :root {
-  --background: #050a14;
-  --foreground: #e2e8f0;
-  --surface: #0f1a2e;
-  --surface-elevated: #162035;
-  --border: #1e3a5f;
-  --accent: #38bdf8;
-  --accent-muted: #0ea5e9;
-  --felt: #0a1628;
-  --text: #e2e8f0;
+  --background: #f5f7fb;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-elevated: #eef2f8;
+  --border: #d5dbe7;
+  --accent: #0284c7;
+  --accent-muted: #0369a1;
+  --felt: #0a1628; /* table-only token — felt stays dark in both themes */
+  --text: #0f172a;
   --text-muted: #64748b;
-  --suit-red: #f87171;
-  --suit-black: #e2e8f0;
-  --team-ns: #38bdf8;
-  --team-ew: #a78bfa;
+  --suit-red: #dc2626;
+  --suit-black: #0f172a;
+  --team-ns: #0284c7;
+  --team-ew: #7c3aed;
+  --magic-card-gradient: #dbe2ee;
 }
 
 html.dark {
@@ -34,6 +39,7 @@ html.dark {
   --suit-black: #e2e8f0;
   --team-ns: #38bdf8;
   --team-ew: #a78bfa;
+  --magic-card-gradient: #262626;
 }
 
 body {
@@ -52,6 +58,37 @@ body {
    The in-game table UI does NOT use this class, so it keeps its navy felt theme.
    ────────────────────────────────────────────────────────────────────────── */
 .halo {
+  /* Light substrate + tiered whites (dark variant in html.dark .halo below) */
+  --background: #f6f7fa;
+  --surface: #ffffff;
+  --surface-elevated: #eef0f6;
+  --border: #dfe2ec;
+  --border-strong: #c9cdda;
+
+  /* Foreground scale */
+  --foreground: #14161f;
+  --text: #14161f;
+  --text-muted: #5c6170;
+  --text-faint: #9aa0ae;
+
+  /* Single electric-indigo action colour + hover/pressed (identical in both themes) */
+  --accent: #5b6bff;
+  --accent-muted: #4a59e6;
+  --primary-hover: #4a59e6;
+  --primary-pressed: #3947c4;
+
+  /* Signal colours (status only) */
+  --success: #0f9f5f;
+  --warning: #b58a00;
+  --info: #0e8fa3;
+  --error: #d92d47;
+
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html.dark .halo {
   /* Neutral near-black substrate + three charcoal tiers */
   --background: #0a0b0f;
   --surface: #14151c;
@@ -76,10 +113,6 @@ body {
   --warning: #f5d547;
   --info: #3dd7e5;
   --error: #ff3a5c;
-
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* In-game table theme — re-declares the original navy tokens so the game

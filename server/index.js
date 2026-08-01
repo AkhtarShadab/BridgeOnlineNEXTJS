@@ -11,7 +11,9 @@ import { shouldUseQueue } from '../lib/queue/gameQueue.ts';
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0'; // Listen on all network interfaces
-const port = 3000;
+// PORT is overridable so the Mode-2 e2e config (playwright.queue.config.ts)
+// can run its own server on :3010 alongside a Mode-1 server on :3000.
+const port = Number(process.env.PORT) || 3000;
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();

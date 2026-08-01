@@ -1,0 +1,165 @@
+# BridgeOnline — local Kubernetes stack for Docker Desktop.
+# All-in-one app + in-cluster Postgres + Redis, exposed via a LoadBalancer
+# Service (Docker Desktop binds it to http://localhost:3000).
+#
+#   kubectl apply -f deploy/k8s/local/stack.yaml
+#
+# Data is ephemeral (emptyDir) — fine for testing; a pod restart wipes the DB.
+---
+# ─────────────────────────── PostgreSQL ───────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels: { app: postgres }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER, value: bridge }
+            - { name: POSTGRES_PASSWORD, value: bridge }
+            - { name: POSTGRES_DB, value: bridge }
+            # speeds up first boot; not for real data
+            - { name: POSTGRES_INITDB_ARGS, value: "--auth-host=trust" }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "bridge"] }
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+# ───────────────────────────── Redis ──────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels: { app: redis }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379, targetPort: 6379 }]
+---
+# ──────────────────────── App configuration ───────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-config
+data:
+  # In-cluster DNS: services are reachable by their name.
+  DATABASE_URL: "postgresql://bridge:bridge@postgres:5432/bridge?schema=public"
+  DIRECT_URL: "postgresql://bridge:bridge@postgres:5432/bridge?schema=public"
+  REDIS_URL: "redis://redis:6379"
+  # Must match how the browser reaches the LoadBalancer.
+  NEXTAUTH_URL: "http://localhost:3000"
+  NEXT_PUBLIC_SOCKET_URL: "http://localhost:3000"
+  # Feature flags — turn the Redis-backed features on so you can exercise them.
+  FEATURE_RECONNECT_GRACE: "true"
+  FEATURE_HOT_COLD_STATE: "true"
+  FEATURE_ACTION_QUEUE: "true"
+  FEATURE_VOICE_CHAT: "false"
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bridge-secret
+type: Opaque
+stringData:
+  # Local dev secret only — generate a real one for anything shared:
+  #   openssl rand -base64 32
+  NEXTAUTH_SECRET: "local-dev-secret-change-me-0123456789abcd"
+---
+# ──────────────────────────── App ─────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bridge
+  labels: { app: bridge }
+spec:
+  # Keep at 1: all-in-one holds Socket.io rooms in-process. Scaling web/socket
+  # past 1 needs the split topology + sticky sessions (see deploy/README.md).
+  replicas: 1
+  selector: { matchLabels: { app: bridge } }
+  template:
+    metadata:
+      labels: { app: bridge }
+    spec:
+      # Push the Prisma schema once Postgres is reachable (retries until it is).
+      initContainers:
+        - name: db-push
+          image: bridgeonline:local
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - "until npx prisma db push --skip-generate; do echo 'waiting for postgres...'; sleep 3; done"
+          envFrom:
+            - configMapRef: { name: bridge-config }
+      containers:
+        - name: bridge
+          image: bridgeonline:local
+          imagePullPolicy: IfNotPresent   # use the locally-built image, don't pull
+          ports: [{ containerPort: 3000 }]
+          envFrom:
+            - configMapRef: { name: bridge-config }
+            - secretRef: { name: bridge-secret }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bridge
+spec:
+  type: LoadBalancer          # Docker Desktop → EXTERNAL-IP = localhost
+  selector: { app: bridge }
+  ports:
+    - port: 3000
+      targetPort: 3000

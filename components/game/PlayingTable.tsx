@@ -12,6 +12,9 @@
    ============================================================ */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { BorderBeam } from "@/components/ui/border-beam";
+import { NumberTicker } from "@/components/ui/number-ticker";
 // NOTE: import the stylesheet ONCE in app/layout.tsx (Next.js only allows global
 // CSS imports from the root layout):  import "@/components/game/playing-table.css";
 
@@ -80,6 +83,14 @@ export interface PlayingTableProps {
   rake?: number;
   /** Animation speed multiplier. */
   speed?: number;
+  /** Felt color theme. */
+  feltTheme?: "navy" | "green" | "crimson";
+  /** When true, seat name plates can be dragged to a custom position. */
+  movable?: boolean;
+  /** Persisted per-seat drag offsets (screen px), owned by the caller. */
+  seatOffsets?: Partial<Record<Seat, { dx: number; dy: number }>>;
+  /** Called with the final offset once a drag ends. */
+  onSeatOffsetChange?: (seat: Seat, offset: { dx: number; dy: number }) => void;
   className?: string;
 }
 
@@ -138,6 +149,14 @@ const TRICK_POS: Record<Slot, string> = {
 };
 const SLOT_ANIM: Record<Slot, string> = { bottom: "S", top: "N", right: "E", left: "W" };
 
+/* spring entrance/collect offsets, relative to the card's resting position */
+const ENTRY_OFFSET: Record<string, { x: number; y: number }> = {
+  S: { x: -46, y: 240 }, N: { x: -46, y: -240 }, E: { x: 240, y: 0 }, W: { x: -240, y: 0 },
+};
+const COLLECT_OFFSET: Record<string, { x: number; y: number }> = {
+  S: { x: -46, y: 320 }, N: { x: -46, y: -320 }, E: { x: 320, y: 0 }, W: { x: -320, y: 0 },
+};
+
 /* ---------- card face ---------- */
 function CardFace({ card }: { card: string }) {
   const r = rankOf(card), s = suitOf(card);
@@ -179,10 +198,47 @@ export default function PlayingTable(props: PlayingTableProps) {
     fanStyle = "fan",
     rake = 52,
     speed = 1,
+    feltTheme = "navy",
+    movable = false,
+    seatOffsets = {},
+    onSeatOffsetChange,
     className = "",
   } = props;
 
   const stageRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ seat: Seat; startX: number; startY: number; startDx: number; startDy: number; fit: number } | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+
+  const handleSeatPointerDown = (e: React.PointerEvent<HTMLDivElement>, seat: Seat) => {
+    if (!movable) return;
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const fit = parseFloat(stageRef.current?.style.getPropertyValue("--bt-fit") || "1") || 1;
+    const cur = seatOffsets[seat] ?? { dx: 0, dy: 0 };
+    dragRef.current = { seat, startX: e.clientX, startY: e.clientY, startDx: cur.dx, startDy: cur.dy, fit };
+    el.classList.add("bt-dragging");
+  };
+  const handleSeatPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (!st) return;
+    const dx = st.startDx + (e.clientX - st.startX) / st.fit;
+    const dy = st.startDy + (e.clientY - st.startY) / st.fit;
+    const el = e.currentTarget;
+    el.style.setProperty("--seat-dx", `${dx}px`);
+    el.style.setProperty("--seat-dy", `${dy}px`);
+  };
+  const handleSeatPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (!st) return;
+    const el = e.currentTarget;
+    el.releasePointerCapture(e.pointerId);
+    el.classList.remove("bt-dragging");
+    const dx = parseFloat(el.style.getPropertyValue("--seat-dx")) || 0;
+    const dy = parseFloat(el.style.getPropertyValue("--seat-dy")) || 0;
+    dragRef.current = null;
+    onSeatOffsetChange?.(st.seat, { dx, dy });
+  };
 
   // fit the fixed 1120×700 scene into the component's box
   useEffect(() => {
@@ -227,7 +283,7 @@ export default function PlayingTable(props: PlayingTableProps) {
   } as CSSProperties;
 
   return (
-    <div ref={stageRef} className={`bt-stage ${className}`} style={stageStyle}>
+    <div ref={stageRef} className={`bt-stage ${className}`} data-felt-theme={feltTheme} style={stageStyle}>
       <div className="bt-scene">
         <div className="bt-table">
           <div className="bt-felt" />
@@ -255,16 +311,28 @@ export default function PlayingTable(props: PlayingTableProps) {
             const active = turn === s;
             const opp = s !== viewerSeat && s !== partnerSeat;
             const isWinner = trickWinner === s;
+            const off = seatOffsets[s] ?? { dx: 0, dy: 0 };
             return (
               <div
                 key={s}
                 data-testid={`trick-winner-${s}`}
                 className={`bt-seat bt-seat-pos-${screen[s]}${active ? " active" : ""}${isWinner ? " bt-winner" : ""}`}
               >
-                <div className="bt-seat-plate">
-                  <div className={`bt-avatar${opp ? " ew" : ""}${dummyRevealed && s === dummySeat ? " dummy-tag" : ""}`}>{s}</div>
+                <div
+                  className={`bt-seat-plate${movable ? " bt-movable" : ""}`}
+                  style={{ "--seat-dx": `${off.dx}px`, "--seat-dy": `${off.dy}px` } as CSSProperties}
+                  onPointerDown={(e) => handleSeatPointerDown(e, s)}
+                  onPointerMove={handleSeatPointerMove}
+                  onPointerUp={handleSeatPointerUp}
+                  onPointerCancel={handleSeatPointerUp}
+                >
+                  {active && <BorderBeam size={40} duration={3} colorFrom="var(--bt-accent)" colorTo="transparent" />}
+                  <div className={`bt-avatar${opp ? " ew" : ""}${dummyRevealed && s === dummySeat ? " dummy-tag" : ""}${s === declarer ? " declarer" : ""}`}>{s}</div>
                   <div className="bt-seat-meta">
-                    <span className="bt-seat-name">{seatName(s)}</span>
+                    <span className="bt-seat-name">
+                      {seatName(s)}
+                      {active && <span className="bt-turn-dot" />}
+                    </span>
                     <span className="bt-seat-sub">{seatSub(s)}</span>
                   </div>
                 </div>
@@ -283,25 +351,50 @@ export default function PlayingTable(props: PlayingTableProps) {
           })}
 
           {/* the current trick */}
-          <div className={`bt-trick${trickCollecting ? " bt-collecting" : ""}`}>
-            {trick.map((p) => {
-              const slot = screen[p.seat];
-              // When collecting, override the trick position with the winner's seat position
-              const winnerSlot = trickWinner ? screen[trickWinner] : slot;
-              const animClass = trickCollecting
-                ? `bt-anim-collect-${SLOT_ANIM[winnerSlot]}`
-                : `bt-anim-in-${SLOT_ANIM[slot]}`;
-              return (
-                <div key={p.seat + p.card} className="bt-card" style={{ transform: TRICK_POS[slot] }}>
-                  <div className={`bt-card-inner ${animClass}`}><CardFace card={p.card} /></div>
-                </div>
-              );
-            })}
+          <div className="bt-trick">
+            <AnimatePresence>
+              {trick.map((p) => {
+                const slot = screen[p.seat];
+                // When collecting, override the trick position with the winner's seat position
+                const winnerSlot = trickWinner ? screen[trickWinner] : slot;
+                const entryDir = SLOT_ANIM[slot];
+                const collectDir = SLOT_ANIM[winnerSlot];
+                return (
+                  <div key={p.seat + p.card} className="bt-card" style={{ transform: TRICK_POS[slot] }}>
+                    <motion.div
+                      className="bt-card-inner"
+                      initial={
+                        prefersReducedMotion
+                          ? false
+                          : { ...ENTRY_OFFSET[entryDir], scale: 1.4, opacity: 0 }
+                      }
+                      animate={
+                        trickCollecting
+                          ? { ...COLLECT_OFFSET[collectDir], scale: 0.4, opacity: 0 }
+                          : { x: 0, y: 0, scale: 1, opacity: 1 }
+                      }
+                      transition={
+                        prefersReducedMotion
+                          ? { duration: 0 }
+                          : {
+                              type: "spring",
+                              stiffness: (trickCollecting ? 140 : 260) * speed,
+                              damping: trickCollecting ? 24 : 22,
+                            }
+                      }
+                    >
+                      <CardFace card={p.card} />
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </AnimatePresence>
           </div>
 
           {/* Feature 11: compact contract chip on the felt center */}
           {contract && (
             <div className="bt-felt-contract" data-testid="felt-contract">
+              <BorderBeam size={30} duration={5} colorFrom="var(--bt-accent)" colorTo="transparent" />
               <span className={`bt-felt-contract-suit ${(contract.suit === 'H' || contract.suit === 'D') ? 'text-suit-red' : 'text-suit-black'}`}>
                 {contract.level}
                 {({S:'♠',H:'♥',D:'♦',C:'♣'} as Record<string,string>)[contract.suit] ?? contract.suit}
@@ -315,12 +408,12 @@ export default function PlayingTable(props: PlayingTableProps) {
           <div className="bt-scoreboard">
             <div className="bt-score-row">
               <span className="bt-score-team bt-score-ns">NS</span>
-              <span className="bt-score-val">{tricksWon.NS}</span>
+              <span className="bt-score-val"><NumberTicker value={tricksWon.NS} className="text-[var(--bt-text)]" /></span>
             </div>
             <div className="bt-score-divider" />
             <div className="bt-score-row">
               <span className="bt-score-team bt-score-ew">EW</span>
-              <span className="bt-score-val">{tricksWon.EW}</span>
+              <span className="bt-score-val"><NumberTicker value={tricksWon.EW} className="text-[var(--bt-text)]" /></span>
             </div>
           </div>
         </div>
