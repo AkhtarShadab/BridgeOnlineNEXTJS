@@ -2,32 +2,47 @@
 
 Hobby path for playing with friends: one Render Web Service + Supabase Postgres.
 
-## 1. Supabase Postgres
+## Supabase project (already provisioned)
 
-1. Create a project at [supabase.com](https://supabase.com) (region near you, e.g. Mumbai / Singapore).
-2. **Project Settings → Database → Connection string**:
-   - **URI (Transaction pooler / port 6543)** → `DATABASE_URL`  
-     Append `?pgbouncer=true` if not already present (Prisma + pooler).
-   - **URI (Direct / port 5432)** → `DIRECT_URL`
-3. You do **not** need Supabase Auth — BridgeOnline keeps NextAuth.
+| | |
+|--|--|
+| Project | **BridgeOnline** |
+| Ref | `zxglihcentjhwwxqkprb` |
+| Region | `ap-south-1` (Mumbai) |
+| API URL | https://zxglihcentjhwwxqkprb.supabase.co |
+| DB host | `db.zxglihcentjhwwxqkprb.supabase.co` |
+| Dashboard | https://supabase.com/dashboard/project/zxglihcentjhwwxqkprb |
 
-Example shapes:
+**Already applied on this database:**
+
+- Full Prisma schema (users, rooms, games, moves, results, friendships, invitations)
+- Row Level Security enabled on all app tables
+- `anon` / `authenticated` privileges revoked (Prisma-only access)
+- Feature 15 performance indexes (`idx_games_room_phase`, `idx_users_stats_gin`, `idx_game_moves_covering`)
+
+You do **not** need Supabase Auth — BridgeOnline keeps NextAuth.
+
+## 1. Get the database password
+
+1. Open [Database settings](https://supabase.com/dashboard/project/zxglihcentjhwwxqkprb/settings/database).
+2. Copy or **reset** the database password.
+3. Fill `YOUR_DB_PASSWORD` in [`env.supabase.template`](./env.supabase.template) → paste into Render env vars.
+
+Ready-made URL shapes (password only missing):
 
 ```
-DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
-DIRECT_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+DIRECT_URL=postgresql://postgres:YOUR_DB_PASSWORD@db.zxglihcentjhwwxqkprb.supabase.co:5432/postgres
 ```
-
-(Or use the direct host shown in the Supabase dashboard for `DIRECT_URL`.)
 
 ## 2. Render Web Service
 
 ### Option A — Blueprint (recommended)
 
-1. Push branch `RenderSupabase` to GitHub.
+1. Branch `RenderSupabase` is on GitHub.
 2. [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
 3. Select this repo + branch `RenderSupabase` (uses `render.yaml`).
-4. Fill secrets when prompted: `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_URL`.
+4. Paste `DATABASE_URL`, `DIRECT_URL`, and set `NEXTAUTH_URL` after the first URL is known.
 
 ### Option B — Manual Web Service
 
@@ -40,9 +55,7 @@ DIRECT_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase
 | Plan | Free |
 | Health check | `/api/health` |
 
-Env vars: same as in `render.yaml`.
-
-After the first deploy, set:
+After the first deploy:
 
 ```
 NEXTAUTH_URL=https://YOUR-SERVICE.onrender.com
@@ -61,4 +74,4 @@ NEXTAUTH_URL=https://YOUR-SERVICE.onrender.com
 - **Free Render** services sleep after ~15 minutes idle — wake before a session.
 - **No Redis** on this path (single instance only).
 - **Voice** is off by default (needs TURN across networks).
-- Schema is applied with `prisma db push` during build (fine for hobby; use migrations for production later).
+- Schema is already on Supabase; `prisma db push` on Render stays idempotent / safe to re-run.
