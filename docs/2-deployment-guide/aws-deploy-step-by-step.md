@@ -3,8 +3,10 @@
 Branch: **`AWSDep`**. Stack: **`BridgeOnlineRedisVoice`** (`deploy/aws/cdk`).  
 Diagram: [`../bridgeonline-aws-redis-voice.drawio`](../bridgeonline-aws-redis-voice.drawio).
 
-This guide is the **friends-play** path (EC2 + ElastiCache Redis + coturn + keep Supabase).  
-It includes what we learned deploying on a Free Tier / credits account in **`ap-south-1`**.
+This guide is the **friends-play** path (EC2 + Redis + coturn + keep Supabase).  
+It includes what we learned deploying on a Free Tier / credits account in **`ap-south-1`**, including a **working console-launched 4 GB host**.
+
+**Current live friends host (Aug 2026):** EC2 `i-0ced4339575fd037c` · public IP **`13.127.122.215`** · Amazon Linux 2023 **`x86_64`** · Redis6 on-box · Caddy → `:3000` · coturn in Docker · app via pm2 on branch `AWSDep`.
 
 ---
 
@@ -29,62 +31,78 @@ It includes what we learned deploying on a Free Tier / credits account in **`ap-
 | **coturn** | TURN/STUN server | Relays WebRTC voice when peers can’t connect P2P |
 | **Supabase** | Hosted Postgres (already used on Render) | Avoid RDS cost; use **`aws-1-…` pooler** for this project |
 | **Secure context** | HTTPS or `localhost` in the browser | Required for `getUserMedia` and often `crypto.randomUUID` |
-| **Swap file** | Disk used as overflow RAM | Stops hard OOM kills on 2 GB boxes during `npm run build` |
+| **SSH key (.pem)** | Key pair file for `ssh -i … ec2-user@IP` | Works when SSM is flaky; never commit the `.pem` |
+| **Security group** | Instance firewall in AWS | App can be healthy on localhost and still unreachable until **TCP 80** (and TURN ports) are open |
+| **Caddy arch** | Binary must match `uname -m` (`amd64` vs `arm64`) | Wrong arch → `cannot execute binary file: Exec format error` |
+| **redis6 / redis6-cli** | Amazon Linux Redis 6 package | On-box Redis when ElastiCache isn’t wired to this VPC |
 
 ---
 
-## Target architecture (current design)
+## Target architecture
+
+### Working path (what is live now)
 
 ```
 Players (browser)
     │  HTTP/WSS :80  (+ TURN UDP 3478)
     ▼
-Elastic IP → EC2 (Caddy → Node start:all; coturn in Docker)
-    │              │
-    │              ├── REDIS_URL → ElastiCache (same VPC)
-    │              └── secrets → Secrets Manager / .env
-    └── Prisma → Supabase Postgres (pooler)
+Public IP → EC2 x86_64 4GB (Caddy → Node start:all; coturn Docker; redis6 localhost)
+    │
+    └── Prisma → Supabase Postgres (aws-1 pooler)
 ```
 
-**What:** One always-on game server + Redis + optional voice relay.  
-**How:** CDK provisions network/Redis/EC2; you install app on the box.  
-**Why:** Higher Socket.io reliability than sleeping free Render; Redis unlocks adapter + reconnect; coturn unlocks cross-network voice.
+**What:** One always-on 4 GB game server with Redis and TURN on the same box.  
+**How:** Launch EC2 in Console (or CDK when allowed) → SSH with `.pem` → install packages → clone `AWSDep` → pm2 + Caddy.  
+**Why:** Avoids Free Tier CDK blocks and ElastiCache VPC coupling; 4 GB avoids OOM during builds.
+
+### Optional CDK path (ElastiCache)
+
+```
+Elastic IP → EC2 → ElastiCache Redis (same VPC) → Supabase
+```
+
+Use when paid EC2 types work via API and you want managed Redis.
 
 ---
 
-## Monthly cost (what we actually run)
+## Monthly cost estimate
 
-Prices are approximate **ap-south-1**, on-demand, idle friends-play load.
+Prices are approximate **ap-south-1 (Mumbai)**, on-demand, **always-on**, friends-play load. Confirm the exact instance type in the EC2 console.
 
-### A — What worked on this account (`t4g.small` + swap)
+### C — Current live host (4 GB console EC2 + Redis on-box) ← **you are here**
+
+Assumes a typical **4 GB** general-purpose type in Mumbai (e.g. **t3.medium** / **t3a.medium** — check the Instance type column for `i-0ced4339575fd037c`).
 
 | Piece | ~$/mo | Notes |
 |-------|------:|-------|
-| EC2 **t4g.small** (2 GB) | 12–15 | Free Tier–eligible on many new accounts |
-| EBS 30 GB gp3 | 2–3 | Root disk |
-| ElastiCache **cache.t4g.micro** | 12–16 | Skip and use Redis on-box to save ~$12 |
-| Elastic IP (attached) | 0 | Charged if unattached |
-| Secrets Manager (1 secret) | ~0.40 | |
-| TURN / HTTP egress | 1–20+ | Usage-dependent |
-| **Total (idle)** | **~27–35** | Fits $200 credits for months |
+| EC2 **4 GB** (x86_64) | **28–35** | Dominant cost |
+| EBS root (8–30 GB gp3) | 1–3 | Depends on volume size |
+| Redis on-box (`redis6`) | 0 | No ElastiCache bill |
+| Elastic IP (if attached) | 0 | Free while associated |
+| coturn / HTTP egress | 1–15+ | Rises with voice relay |
+| Supabase | 0–25 | Outside AWS (your existing plan) |
+| **Estimated AWS total (idle 24/7)** | **~$30–40 / month** | |
+| **With light voice + traffic** | **~$35–55 / month** | |
 
-### B — Desired if account allows paid EC2 (`t4g.medium`)
+**Against $200 credits:** about **4–6 months** at this footprint if the instance runs continuously and egress stays modest.
 
-| Piece | ~$/mo |
-|-------|------:|
-| EC2 **t4g.medium** (4 GB) | 24–30 |
-| Same Redis + disk + secrets | ~15–20 |
-| **Total (idle)** | **~39–50** |
+**Save money:** stop the instance when not playing — you still pay EBS (~$1–3/mo) but not compute hours.
+
+### A — Earlier CDK path (`t4g.small` 2 GB + ElastiCache)
+
+| Total idle | ~**$27–35/mo** |
+
+### B — CDK `t4g.medium` + ElastiCache (when API allows)
+
+| Total idle | ~**$39–50/mo** |
 
 ### Lesson: credits vs Free Tier
 
 | What | How | Why |
 |------|-----|-----|
-| Account shows $200 credits | Billing → Credits | Money can pay for Redis, data transfer, etc. |
-| `t4g.medium` CREATE fails with “not eligible for Free Tier” | EC2 API / CDK | Account still restricted to Free Tier–eligible types until billing/identity fully unlocks paid EC2 |
-| Console lists 4 GB types | UI catalog | Listing ≠ permission to launch; try Launch — same error often appears |
-
-**Unlock path (next session):** Billing payment method + identity verification → confirm Console can **Launch** `t4g.medium` → then CDK `AppHostMedium` deploy.
+| Account shows $200 credits | Billing → Credits | Pays for compute/egress |
+| CDK `t4g.medium` CREATE blocked | EC2 API Free Tier rule | Credits ≠ Free Tier eligibility |
+| Console launched a 4 GB type | Manual Launch + SSH | Path that worked for the live host |
 
 ---
 
@@ -102,7 +120,11 @@ Prices are approximate **ap-south-1**, on-demand, idle friends-play load.
 | 8 | Bid: `crypto.randomUUID` not a function | `lib/uuid.ts` → `newActionId()` | Same secure-context limit on HTTP |
 | 9 | Next build typed `deploy/aws/cdk` | `exclude: ["deploy/aws/cdk"]` in `tsconfig.json` | App build mustn’t require `aws-cdk-lib` |
 | 10 | PowerShell `&` in secrets JSON | Single-quoted `--secret-string '...'` | `&` is a PowerShell operator |
-| 11 | Paste glued commands (`caddycd`) | One command per line in SSM | SSM paste is fragile |
+| 11 | Paste glued commands (`caddycd`) | One command per line in SSH/SSM | Paste is fragile |
+| 12 | Caddy `Exec format error` | Download `arch=amd64` when `uname -m` is `x86_64` (not `arm64`) | Binary arch must match CPU |
+| 13 | Health OK on localhost, browser can’t reach host | Open SG **TCP 80** (and 3000/3478 as needed) | Security group ≠ local listen |
+| 14 | New 4 GB box in default VPC | Use **redis6 on-box** (`REDIS_URL=redis://127.0.0.1:6379`) | Old ElastiCache is VPC-local; don’t assume reachability |
+| 15 | SSM flaky | SSH with `.pem` as `ec2-user@PUBLIC_IP` | Reliable day-2 access |
 
 App fixes for HTTP live on **`AWSDep`** (`newActionId`, voice guards). Voice still needs **HTTPS + domain** for real mics.
 
@@ -323,22 +345,76 @@ Until then: gameplay + Redis work; voice auto-join is skipped on non-secure cont
 
 | Task | Command / action |
 |------|------------------|
-| Health | `curl http://EIP/api/health` |
+| Health | `curl http://13.127.122.215/api/health` (or current public IP) |
 | App logs | `pm2 logs bridgeonline` |
-| SSM status | `aws ssm describe-instance-information --filters Key=InstanceIds,Values=i-…` |
-| Reboot (SSM dead) | `aws ec2 reboot-instances --instance-ids i-…` |
-| Tear down spend | `npx cdk destroy BridgeOnlineRedisVoice` |
-| Console empty? | Switch region to **ap-south-1 (Mumbai)** |
+| SSH | `ssh -i BridgeSSH.pem ec2-user@PUBLIC_IP` |
+| Stop spend (keep disk) | EC2 → Stop instance |
+| Tear down CDK stack (if any) | `npx cdk destroy BridgeOnlineRedisVoice` |
+| Console empty? | Region **ap-south-1 (Mumbai)** |
 
 ---
 
-## Recommended path for next deploy
+## Phase 9 — Console EC2 playbook (what worked for the live 4 GB host)
 
-1. Unlock paid EC2 (billing/verification) **or** accept `t4g.small` + swap.
-2. `cdk destroy` if the stack is half-broken → set a launchable instance type → `cdk deploy`.
-3. Manual host setup (Phases 6–7), **one command per line**.
-4. Confirm health + play a hand.
-5. Add domain + HTTPS before relying on voice.
+| | |
+|--|--|
+| **What** | Manual Amazon Linux 2023 host with Redis + Caddy + coturn + pm2 |
+| **How** | Launch 4 GB instance → attach key pair → open SG ports → SSH → install → clone `AWSDep` |
+| **Why** | Bypassed CDK Free Tier instance-type blocks; 4 GB avoids build OOMs |
+
+### Access
+
+```powershell
+ssh -i "PATH\TO\your-key.pem" ec2-user@PUBLIC_IP
+sudo -i
+```
+
+### Packages (x86_64 example)
+
+```bash
+dnf install -y docker git jq redis6
+systemctl enable --now docker redis6
+redis6-cli ping   # PONG
+
+# Caddy — MATCH CPU ARCH
+# uname -m = x86_64  → arch=amd64
+# uname -m = aarch64 → arch=arm64
+curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /usr/local/bin/caddy
+chmod +x /usr/local/bin/caddy
+```
+
+Caddyfile reverse_proxy `:80` → `127.0.0.1:3000`. systemd enable caddy.
+
+coturn via Docker with `--external-ip=PUBLIC_IP` and `TURN_SECRET` matching `.env`.
+
+App:
+
+```bash
+cd /opt && git clone … bridgeonline && cd bridgeonline && git checkout AWSDep
+# .env: REDIS_URL=redis://127.0.0.1:6379  NEXTAUTH_URL=http://PUBLIC_IP
+npm ci --legacy-peer-deps && npx prisma generate && npm run build
+pm2 start npm --name bridgeonline -- run start:all
+pm2 save && pm2 startup systemd -u root --hp /root
+```
+
+### Security group (required or browser “can’t reach”)
+
+| Port | Protocol | Why |
+|------|----------|-----|
+| 22 | TCP | SSH |
+| 80 | TCP | Caddy / HTTP |
+| 443 | TCP | HTTPS later |
+| 3478 | TCP+UDP | TURN |
+| 49152–49200 | UDP | TURN relay |
+
+### Verify
+
+```bash
+curl -s http://127.0.0.1:3000/api/health   # on box
+curl -s http://127.0.0.1/api/health        # via Caddy
+# from laptop:
+curl.exe -s http://PUBLIC_IP/api/health
+```
 
 ---
 

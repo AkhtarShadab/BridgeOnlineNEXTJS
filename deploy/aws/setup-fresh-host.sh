@@ -22,8 +22,9 @@ curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
 dnf install -y nodejs
 npm install -g pm2
 
-# Caddy (ARM64)
-curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=arm64" -o /usr/local/bin/caddy
+# Caddy — MUST match CPU architecture (see `uname -m`)
+# x86_64 → arch=amd64 ; aarch64 → arch=arm64
+curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /usr/local/bin/caddy
 chmod +x /usr/local/bin/caddy
 mkdir -p /etc/caddy
 cat >/etc/caddy/Caddyfile <<'EOF'
