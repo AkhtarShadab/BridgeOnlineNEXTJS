@@ -395,6 +395,19 @@
   left: 0; top: 0;
   transition: transform calc(.25s / var(--bt-speed)) cubic-bezier(.22, .9, .3, 1);
 }
+/* Side cards overlap vertically, so only ~27px of each card is visible.
+   The default corner stacks the suit pip BELOW the rank, which puts it
+   under the next card. Lay rank + suit side by side so both stay visible. */
+.bt-side-dummy .bt-corner {
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  line-height: 1;
+}
+.bt-side-dummy .bt-pip-sm {
+  margin-top: 0;
+  font-size: 17px;
+}
 
 /* ============================================================ OPPONENT BACKS */
 .bt-mini-fan { position: absolute; transform-style: preserve-3d; }
