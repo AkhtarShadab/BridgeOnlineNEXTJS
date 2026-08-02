@@ -157,12 +157,12 @@ export default function GamePage() {
     const peersInRoom = game?.players ? game.players.map((p: any) => p.userId) : [];
     const { isJoined, isMuted, participants, joinVoice, toggleMute } = useVoiceChat(game?.roomId || null, peersInRoom);
 
-    // Auto-join voice as soon as game is ready
+    // Auto-join voice only in a secure context (HTTPS / localhost).
     useEffect(() => {
         if (!isEnabled("voiceChat")) return;
-        if (game?.roomId && connected && !isJoined) {
-            joinVoice();
-        }
+        if (!game?.roomId || !connected || isJoined) return;
+        if (typeof window !== "undefined" && !window.isSecureContext) return;
+        joinVoice();
     }, [game?.roomId, connected, isJoined, joinVoice]);
 
     const handleMicClick = () => {
