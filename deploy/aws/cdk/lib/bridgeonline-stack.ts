@@ -130,7 +130,9 @@ export class BridgeOnlineStack extends cdk.Stack {
     const instance = new ec2.Instance(this, "AppHost", {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.SMALL),
+      // t4g.medium (4 GB) — t4g.small (2 GB) OOM-killed under Next.js builds +
+      // Docker + Redis client + Caddy + SSM agent running together.
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MEDIUM),
       machineImage: ec2.MachineImage.latestAmazonLinux2023({
         cpuType: ec2.AmazonLinuxCpuType.ARM_64,
       }),

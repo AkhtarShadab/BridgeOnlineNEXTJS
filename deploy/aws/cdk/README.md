@@ -5,7 +5,7 @@ Dev-sized stack for friends play with higher Socket.io TPS and WebRTC voice.
 | Resource | Purpose |
 |----------|---------|
 | VPC (public only, **no NAT**) | Avoid ~$32/mo NAT Gateway |
-| EC2 `t4g.small` + Elastic IP | Next.js + Socket.io (`start:all`) + **coturn** |
+| EC2 `t4g.medium` (4GB) + Elastic IP | Next.js + Socket.io (`start:all`) + **coturn** |
 | ElastiCache Redis `cache.t4g.micro` | `REDIS_URL` → Socket.io adapter + reconnect grace |
 | Secrets Manager `bridgeonline/app` | Supabase URLs, `NEXTAUTH_SECRET`, `TURN_SECRET` |
 
@@ -38,13 +38,13 @@ After deploy:
 
 | Item | ~$/mo |
 |------|-------|
-| EC2 t4g.small | ~$12–15 |
+| EC2 t4g.medium (4GB, upgraded from t4g.small — 2GB OOM'd under build+Docker+Redis+Caddy) | ~$24–30 |
 | EBS 30 GB gp3 | ~$2–3 |
 | ElastiCache cache.t4g.micro | ~$12–16 |
 | Elastic IP (attached) | $0 |
 | Secrets Manager (1 secret) | ~$0.40 |
 | TURN egress (friends play) | variable ($1–20+) |
-| **Total (idle)** | **~$27–35** |
+| **Total (idle)** | **~$39–50** |
 
 Fits well inside **$200 AWS credits**. Skip ElastiCache and run Redis on the box to drop to ~$15/mo (see [aws-redis-credits.md](../../../docs/2-deployment-guide/aws-redis-credits.md)).
 
