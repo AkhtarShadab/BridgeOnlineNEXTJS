@@ -47,11 +47,12 @@ export default function RoomPage() {
     const peersInRoom = room?.players.map(p => p.userId) || [];
     const { isJoined, isMuted, participants, joinVoice, toggleMute } = useVoiceChat(roomId, peersInRoom);
 
-    // Auto-join voice as soon as room is loaded (so we have peers mapped)
+    // Auto-join voice only in a secure context (HTTPS / localhost). HTTP on a
+    // public IP has no mediaDevices API and used to crash the room page.
     useEffect(() => {
-        if (room && roomId && connected && !isJoined) {
-            joinVoice();
-        }
+        if (!room || !roomId || !connected || isJoined) return;
+        if (typeof window !== "undefined" && !window.isSecureContext) return;
+        joinVoice();
     }, [room, roomId, connected, isJoined, joinVoice]);
 
     const handleMicClick = () => {

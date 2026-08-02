@@ -119,17 +119,30 @@ export class VoiceManager {
         });
     }
 
-    public async initializeAndJoin(roomId: string, peersInRoom: string[]) {
-        if (this.localStream) return; // Guard against double initialization
+    public async initializeAndJoin(roomId: string, peersInRoom: string[]): Promise<boolean> {
+        if (this.localStream) return true; // Guard against double initialization
         this.roomId = roomId;
 
         if (process.env.NEXT_PUBLIC_DISABLE_VOICE === 'true') {
             console.log("Voice system disabled via NEXT_PUBLIC_DISABLE_VOICE");
-            return;
+            return false;
+        }
+
+        // Browsers only expose mediaDevices in a secure context (HTTPS or localhost).
+        // Plain HTTP on a public IP (e.g. http://15.x.x.x) throws if we call getUserMedia.
+        const mediaDevices = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+        if (!mediaDevices?.getUserMedia) {
+            const msg =
+                typeof window !== "undefined" && !window.isSecureContext
+                    ? "Voice needs HTTPS (or localhost). Open the site over https:// or disable voice until TLS is set up."
+                    : "Microphone API unavailable in this browser.";
+            console.warn("[Voice]", msg);
+            if (this.onError) this.onError(msg);
+            return false;
         }
 
         try {
-            this.localStream = await navigator.mediaDevices.getUserMedia({
+            this.localStream = await mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
@@ -140,7 +153,7 @@ export class VoiceManager {
         } catch (err) {
             console.error("Microphone access denied:", err);
             if (this.onError) this.onError("Microphone access denied. Please check your permissions.");
-            return;
+            return false;
         }
 
         // Send local stream to UI immediately
@@ -156,6 +169,7 @@ export class VoiceManager {
                 await this.initiateCall(peerId);
             }
         }
+        return true;
     }
 
     private setupLocalAudioDetection() {

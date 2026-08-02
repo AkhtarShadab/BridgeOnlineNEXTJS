@@ -96,7 +96,9 @@ export function useVoiceChat(roomId: string | null, peersInRoom: string[]) {
         if (!managerRef.current || !roomId || isJoined) return;
 
         setError(null);
-        await managerRef.current.initializeAndJoin(roomId, peersInRoom);
+        const ok = await managerRef.current.initializeAndJoin(roomId, peersInRoom);
+        if (!ok) return;
+
         setIsJoined(true);
 
         // Re-apply saved mute state to the fresh stream (e.g. after effect re-run)
