@@ -127,7 +127,10 @@ export class BridgeOnlineStack extends cdk.Stack {
       "EOF",
     );
 
-    const instance = new ec2.Instance(this, "AppHost", {
+    // New logical ID forces CloudFormation to CREATE a fresh instance (t4g.medium)
+    // instead of trying an in-place type change (blocked on some accounts).
+    // Note: root disk is new — re-clone app, reinstall Node/Docker/Caddy on first boot.
+    const instance = new ec2.Instance(this, "AppHostMedium", {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       // t4g.medium (4 GB) — t4g.small (2 GB) OOM-killed under Next.js builds +
@@ -149,6 +152,7 @@ export class BridgeOnlineStack extends cdk.Stack {
         },
       ],
     });
+    cdk.Tags.of(instance).add("Name", "bridgeonline-app-medium");
 
     const eip = new ec2.CfnEIP(this, "AppEip", {
       domain: "vpc",

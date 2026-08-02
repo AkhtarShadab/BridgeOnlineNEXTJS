@@ -11,4 +11,6 @@
 
 **Recommended (credits):** `cd cdk && npx cdk deploy` → fill `env.aws.template` from stack outputs → enable voice flags → `npm run start:all`.
 
+**Resize note:** In-place `t4g.small` → `t4g.medium` can fail on restricted accounts. The stack uses construct `AppHostMedium` so deploy **creates a new 4GB instance** (new disk — re-run host setup). Prefer `cdk destroy` then `cdk deploy` if the old instance already vanished from the console.
+
 **Quick path (Redis only):** install Redis on the same box → set `REDIS_URL=redis://127.0.0.1:6379` → `npm run start:all` → confirm `/api/health` shows `"redis":"up"`.
