@@ -4,6 +4,7 @@
 >
 > **Using AWS free credits for Redis / higher game TPS?** Start with the shorter guide:
 > [aws-redis-credits.md](./aws-redis-credits.md) (Lightsail/EC2 + Redis, keep Supabase).
+> **Hands-on CDK deploy (what/how/why + lessons):** [aws-deploy-step-by-step.md](./aws-deploy-step-by-step.md).
 > Branch: **`AWSDep`** · env template: [`deploy/aws/env.aws.template`](../../deploy/aws/env.aws.template).
 
 ## 8. Deploying on AWS (concrete)
