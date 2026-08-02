@@ -141,10 +141,43 @@ Use when you want multiple tasks / ALB. Then Redis is **mandatory** for Socket.i
 
 ---
 
+## Option 4 — Redis + voice (CDK)
+
+Use when friends play across different networks and need table voice.
+
+| Piece | Choice |
+|---|---|
+| IaC | [`deploy/aws/cdk`](../../deploy/aws/cdk/) — `BridgeOnlineRedisVoice` |
+| App + TURN | Same **EC2 t4g.small** (coturn + `npm run start:all`) + **Elastic IP** |
+| Redis | **ElastiCache** `cache.t4g.micro` in the VPC |
+| Secrets | Secrets Manager `bridgeonline/app` |
+| Postgres | Keep **Supabase** |
+
+Env (see [`env.aws.template`](../../deploy/aws/env.aws.template)):
+
+```bash
+REDIS_URL=redis://<RedisPrimaryEndpoint>:6379
+FEATURE_VOICE_CHAT=true
+NEXT_PUBLIC_FEATURE_VOICE_CHAT=true
+TURN_URL=turn:<ElasticIp>:3478?transport=udp
+TURN_SECRET=<same as coturn static-auth-secret>
+```
+
+Verify:
+
+```bash
+curl -s https://YOUR_HOST/api/health          # redis: up
+curl -s https://YOUR_HOST/api/voice/turn-credentials   # iceServers with turn:
+```
+
+Diagram: [`docs/bridgeonline-aws-redis-voice.drawio`](../bridgeonline-aws-redis-voice.drawio).
+
+---
+
 ## What Redis does **not** replace
 
 - **CPU for Next.js SSR / card animations** — still need enough vCPU on the app box
-- **Voice TURN** — still coturn / third party if you need reliable voice
+- **Voice TURN** — needs coturn (Option 4) or a third-party TURN provider
 - **Postgres** — Redis is not the source of truth; Prisma still needs `DATABASE_URL`
 
 ---

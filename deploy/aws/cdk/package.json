@@ -1,0 +1,22 @@
+{
+  "name": "bridgeonline-aws-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy --require-approval broadening",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.200.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2"
+  }
+}
