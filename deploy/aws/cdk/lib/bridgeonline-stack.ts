@@ -29,7 +29,7 @@ export class BridgeOnlineStack extends cdk.Stack {
 
     const appSg = new ec2.SecurityGroup(this, "AppSg", {
       vpc,
-      description: "BridgeOnline EC2 — HTTPS, Socket.io, TURN",
+      description: "BridgeOnline EC2 - HTTPS, Socket.io, TURN",
       allowAllOutbound: true,
     });
     appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), "SSH (lock to your IP after first login)");
@@ -45,7 +45,7 @@ export class BridgeOnlineStack extends cdk.Stack {
 
     const redisSg = new ec2.SecurityGroup(this, "RedisSg", {
       vpc,
-      description: "ElastiCache Redis — app SG only",
+      description: "ElastiCache Redis - app SG only",
       allowAllOutbound: false,
     });
     redisSg.addIngressRule(appSg, ec2.Port.tcp(6379), "Redis from app");

@@ -4,6 +4,7 @@
 |------|---------|
 | [`env.aws.template`](./env.aws.template) | Env vars for EC2/Lightsail with **Redis + voice TURN** |
 | [`cdk/`](./cdk/) | CDK stack: EC2 + EIP + ElastiCache + Secrets + coturn ports |
+| [**Full deploy walkthrough**](../../docs/2-deployment-guide/aws-deploy-step-by-step.md) | Laptop → CDK → EC2 app → Caddy → verify voice |
 | [Guide: Redis + AWS credits](../../docs/2-deployment-guide/aws-redis-credits.md) | Step-by-step for higher game TPS + voice |
 | [Architecture diagram](../../docs/bridgeonline-aws-redis-voice.drawio) | Visual: players → EC2/coturn → Redis / Supabase |
 | [Full AWS map](../../docs/2-deployment-guide/aws.md) | ECS · RDS · ElastiCache · ALB |

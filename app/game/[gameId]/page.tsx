@@ -369,7 +369,7 @@ export default function GamePage() {
 
     const handleBid = async (bid: { type: string; level?: number; suit?: string }) => {
         // Feature 18: actionId for idempotency.
-        const actionId = crypto.randomUUID();
+        const actionId = newActionId();
         try {
             const response = await fetch(`/api/games/${gameId}/bid`, {
                 method: "POST",
