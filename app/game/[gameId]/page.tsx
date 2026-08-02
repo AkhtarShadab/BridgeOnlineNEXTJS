@@ -15,6 +15,7 @@ import PlayerVoiceBadge from "@/components/voice/PlayerVoiceBadge";
 import { useVoiceChat } from "@/lib/hooks/useVoiceChat";
 import { isEnabled } from "@/lib/features";
 import { isValidPlay } from "@/lib/game/playing";
+import { newActionId } from "@/lib/uuid";
 
 // Inline SVG suit icons (viewBox 0 0 24 24)
 const SuitIcons = {
@@ -113,7 +114,7 @@ export default function GamePage() {
         setIsSubmitting(true);
         setOptimisticTrick(prev => [...(prev || []), { seat, card }]);
         // Feature 18: actionId for idempotency — retried requests reuse the same UUID.
-        const actionId = crypto.randomUUID();
+        const actionId = newActionId();
         try {
             const res = await fetch(`/api/games/${gameId}/play`, {
                 method: 'POST',
