@@ -30,6 +30,7 @@ Shipping BridgeOnline over the network, and what each capability costs.
 | [README](./2-deployment-guide/README.md) | Production image, the single‑replica‑vs‑Redis constraint, **4 cost tiers (~$5 → ~$400/mo)**, the feature → infrastructure → cost matrix, the voice/TURN tradeoff, and a recommended tooling stack. |
 | [aws.md](./2-deployment-guide/aws.md) | Concrete **AWS**: ECS/Fargate · RDS · ElastiCache · ALB (WebSocket + stickiness) · Secrets Manager · CloudWatch/AMP · coturn on EC2, with AWS cost tiers and a pre‑flight checklist. |
 | [aws-redis-credits.md](./2-deployment-guide/aws-redis-credits.md) | **AWS $200 credits / free-tier path**: add small Redis for higher game TPS (Lightsail/EC2 + local Redis or ElastiCache micro), keep Supabase Postgres, env template on branch `AWSDep`. |
+| [**aws-deploy-step-by-step.md**](./2-deployment-guide/aws-deploy-step-by-step.md) | **What/how/why** CDK + EC2 + Redis + voice deploy: glossary, real cost bands, Free Tier vs credits, OOM/SSM/HTTP lessons from the `AWSDep` run. |
 | [service-separation.md](./2-deployment-guide/service-separation.md) | The **web / socket / worker** split topology, sticky‑session ingress annotations, and replica guidance. |
 | [observability.md](./2-deployment-guide/observability.md) | Sentry, Prometheus + Grafana (ServiceMonitor, dashboards, alerts), Pino JSON logs (Loki/CloudWatch), health/uptime, and locking down `/api/metrics`. |
 

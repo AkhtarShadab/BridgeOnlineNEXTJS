@@ -1,81 +1,156 @@
-# BridgeOnline — Step-by-step AWS deploy (Redis + voice)
+# BridgeOnline — AWS deploy guide (what / how / why)
 
-Branch: **`AWSDep`**. Target stack: **`BridgeOnlineRedisVoice`** in `deploy/aws/cdk`.
+Branch: **`AWSDep`**. Stack: **`BridgeOnlineRedisVoice`** (`deploy/aws/cdk`).  
+Diagram: [`../bridgeonline-aws-redis-voice.drawio`](../bridgeonline-aws-redis-voice.drawio).
 
-What you get:
-
-- Always-on **EC2** (Next.js + Socket.io)
-- **ElastiCache Redis** (higher realtime TPS / reconnect)
-- **coturn** on the same EC2 (table voice across networks)
-- Existing **Supabase Postgres** (no new RDS bill)
-
-Rough cost: **~$27–35/mo** idle (+ TURN bandwidth). Fits $200 AWS credits.
-
-Architecture diagram: [`../bridgeonline-aws-redis-voice.drawio`](../bridgeonline-aws-redis-voice.drawio).
+This guide is the **friends-play** path (EC2 + ElastiCache Redis + coturn + keep Supabase).  
+It includes what we learned deploying on a Free Tier / credits account in **`ap-south-1`**.
 
 ---
 
-## Before you start (checklist)
+## Glossary (software & AWS terms)
 
-| Need | Notes |
-|------|--------|
-| AWS account with credits / billing enabled | Prefer region **`ap-south-1`** (near your Supabase pooler) |
-| Windows / Mac / Linux laptop | Commands below use PowerShell-friendly forms where noted |
-| GitHub access to this repo | Branch `AWSDep` |
-| Supabase DB password | Same one used on Render |
-| A domain (optional but recommended) | e.g. `play.yourdomain.com` → Elastic IP. Without a domain you can use `https://<EIP>` with a self-signed cert or Caddy IP mode (awkward for friends). |
+| Term | What it is | Why we use it |
+|------|------------|---------------|
+| **EC2** | Virtual server in AWS | Always-on host for Next.js + Socket.io (Render free sleeps) |
+| **t4g.small / t4g.medium** | ARM instance sizes (~2 GB / ~4 GB RAM) | Cheap Graviton; small is often Free Tier–eligible, medium is paid |
+| **Free Tier–eligible** | Instance types AWS allows on restricted/new Free Tier accounts | **Credits ≠ eligibility** — API can block `t4g.medium` even with $200 credits |
+| **Elastic IP (EIP)** | Stable public IPv4 | Friends bookmark one IP; TURN needs a fixed host |
+| **VPC / security group** | Private network + firewall rules | Redis stays private; open 80/443/3478 only as needed |
+| **ElastiCache Redis** | Managed Redis in the VPC | Socket.io adapter, reconnect grace; no public endpoint |
+| **Secrets Manager** | Encrypted secret store | DB URL, `NEXTAUTH_SECRET`, `TURN_SECRET` (not in git) |
+| **CDK** | AWS Cloud Development Kit (TypeScript → CloudFormation) | Infra as code: VPC, EC2, Redis, secrets, outputs |
+| **CloudFormation** | AWS’s stack engine CDK drives | Creates/updates/destroys resources as one unit |
+| **SSM Session Manager** | Browser/CLI shell into EC2 without opening SSH | Safer than port 22 to the world |
+| **Session Manager plugin** | Local binary AWS CLI needs for `start-session` | Without it: “SessionManagerPlugin is not found” |
+| **pm2** | Process manager for Node | Restarts `npm run start:all` after crash/reboot |
+| **Caddy** | Reverse proxy + optional HTTPS | Listens on :80/:443, forwards to app :3000; WebSockets OK |
+| **Docker** | Container runtime | Easy way to run **coturn** when the distro has no package |
+| **coturn** | TURN/STUN server | Relays WebRTC voice when peers can’t connect P2P |
+| **Supabase** | Hosted Postgres (already used on Render) | Avoid RDS cost; use **`aws-1-…` pooler** for this project |
+| **Secure context** | HTTPS or `localhost` in the browser | Required for `getUserMedia` and often `crypto.randomUUID` |
+| **Swap file** | Disk used as overflow RAM | Stops hard OOM kills on 2 GB boxes during `npm run build` |
 
 ---
 
-## Phase 0 — Install tools on your laptop
+## Target architecture (current design)
 
-### 0.1 Node.js 22+
-
-Install from [nodejs.org](https://nodejs.org/) (LTS 22). Check:
-
-```powershell
-node -v   # v22.x
-npm -v
 ```
+Players (browser)
+    │  HTTP/WSS :80  (+ TURN UDP 3478)
+    ▼
+Elastic IP → EC2 (Caddy → Node start:all; coturn in Docker)
+    │              │
+    │              ├── REDIS_URL → ElastiCache (same VPC)
+    │              └── secrets → Secrets Manager / .env
+    └── Prisma → Supabase Postgres (pooler)
+```
+
+**What:** One always-on game server + Redis + optional voice relay.  
+**How:** CDK provisions network/Redis/EC2; you install app on the box.  
+**Why:** Higher Socket.io reliability than sleeping free Render; Redis unlocks adapter + reconnect; coturn unlocks cross-network voice.
+
+---
+
+## Monthly cost (what we actually run)
+
+Prices are approximate **ap-south-1**, on-demand, idle friends-play load.
+
+### A — What worked on this account (`t4g.small` + swap)
+
+| Piece | ~$/mo | Notes |
+|-------|------:|-------|
+| EC2 **t4g.small** (2 GB) | 12–15 | Free Tier–eligible on many new accounts |
+| EBS 30 GB gp3 | 2–3 | Root disk |
+| ElastiCache **cache.t4g.micro** | 12–16 | Skip and use Redis on-box to save ~$12 |
+| Elastic IP (attached) | 0 | Charged if unattached |
+| Secrets Manager (1 secret) | ~0.40 | |
+| TURN / HTTP egress | 1–20+ | Usage-dependent |
+| **Total (idle)** | **~27–35** | Fits $200 credits for months |
+
+### B — Desired if account allows paid EC2 (`t4g.medium`)
+
+| Piece | ~$/mo |
+|-------|------:|
+| EC2 **t4g.medium** (4 GB) | 24–30 |
+| Same Redis + disk + secrets | ~15–20 |
+| **Total (idle)** | **~39–50** |
+
+### Lesson: credits vs Free Tier
+
+| What | How | Why |
+|------|-----|-----|
+| Account shows $200 credits | Billing → Credits | Money can pay for Redis, data transfer, etc. |
+| `t4g.medium` CREATE fails with “not eligible for Free Tier” | EC2 API / CDK | Account still restricted to Free Tier–eligible types until billing/identity fully unlocks paid EC2 |
+| Console lists 4 GB types | UI catalog | Listing ≠ permission to launch; try Launch — same error often appears |
+
+**Unlock path (next session):** Billing payment method + identity verification → confirm Console can **Launch** `t4g.medium` → then CDK `AppHostMedium` deploy.
+
+---
+
+## Lessons learned (this deploy)
+
+| # | What happened | How we fixed / mitigated | Why it mattered |
+|---|----------------|---------------------------|-----------------|
+| 1 | SG description with em dash failed create | ASCII `-` only in descriptions | EC2 rejects non-ASCII in `GroupDescription` |
+| 2 | User-data didn’t install coturn/Docker | Manual `dnf` + Docker coturn | Don’t assume first-boot scripts finished |
+| 3 | `npm run build` OOMed 2 GB box; SSM disconnected | Stop pm2/coturn before build; add **2 GB swap**; reboot for SSM | SSM agent dies under memory pressure |
+| 4 | Console “no instances” | Wrong region (need **Mumbai `ap-south-1`**) | Resources are regional |
+| 5 | In-place resize small→medium blocked | Stop→change type in Console, or replace instance / unlock paid tier | Some accounts block modify-instance-attribute |
+| 6 | CDK `t4g.medium` CREATE: Free Tier ineligible | Stay on `t4g.small`+swap until account unlocked | Credits don’t override Free Tier eligibility |
+| 7 | Voice: `mediaDevices.getUserMedia` undefined | Guard + skip auto-join unless `isSecureContext` | Mic API needs HTTPS (not `http://EIP`) |
+| 8 | Bid: `crypto.randomUUID` not a function | `lib/uuid.ts` → `newActionId()` | Same secure-context limit on HTTP |
+| 9 | Next build typed `deploy/aws/cdk` | `exclude: ["deploy/aws/cdk"]` in `tsconfig.json` | App build mustn’t require `aws-cdk-lib` |
+| 10 | PowerShell `&` in secrets JSON | Single-quoted `--secret-string '...'` | `&` is a PowerShell operator |
+| 11 | Paste glued commands (`caddycd`) | One command per line in SSM | SSM paste is fragile |
+
+App fixes for HTTP live on **`AWSDep`** (`newActionId`, voice guards). Voice still needs **HTTPS + domain** for real mics.
+
+---
+
+## Phase 0 — Laptop tools
+
+### 0.1 Node.js 22
+
+| | |
+|--|--|
+| **What** | JavaScript runtime to run CDK and (optionally) local builds |
+| **How** | Install LTS 22 from nodejs.org; `node -v` |
+| **Why** | CDK app and BridgeOnline expect Node 22 |
 
 ### 0.2 Git
 
-```powershell
-git --version
-```
+| | |
+|--|--|
+| **What** | Source control client |
+| **How** | `git --version`; clone/pull `AWSDep` |
+| **Why** | Deploy code and CDK live in the repo |
 
-### 0.3 AWS CLI v2 (required)
+### 0.3 AWS CLI v2 + credentials
 
-1. Download: [AWS CLI v2 for Windows](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-2. Install, then **open a new terminal**.
-3. Create an IAM user (or use IAM Identity Center) with Admin-ish rights for first deploy (or at least: EC2, VPC, ElastiCache, Secrets Manager, CloudFormation, IAM, SSM).
-4. Create access keys and run:
+| | |
+|--|--|
+| **What** | Official CLI for EC2, CloudFormation, Secrets, SSM |
+| **How** | Install CLI → `aws configure` → region `ap-south-1` → `aws sts get-caller-identity` |
+| **Why** | CDK and day-2 ops need it; prefer IAM user over long-lived root keys |
 
-```powershell
-aws configure
-```
+### 0.4 Session Manager plugin
 
-Enter:
-
-- **Access Key ID** / **Secret Access Key**
-- **Default region**: `ap-south-1`
-- **Output**: `json`
-
-Verify:
-
-```powershell
-aws sts get-caller-identity
-```
-
-You should see your `Account` and `Arn`. Note the **Account** number (12 digits).
-
-### 0.4 Session Manager plugin (recommended for SSH-less login)
-
-Install the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) so you can open a shell on EC2 without opening SSH to the world.
+| | |
+|--|--|
+| **What** | Plugin for `aws ssm start-session` |
+| **How** | [Install plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html); new terminal; `session-manager-plugin` |
+| **Why** | Shell into EC2 without opening SSH to `0.0.0.0/0` |
 
 ---
 
-## Phase 1 — Get the code
+## Phase 1 — Code on laptop
+
+| | |
+|--|--|
+| **What** | Branch with CDK + env template + HTTP-safe game fixes |
+| **How** | `git checkout AWSDep && git pull` |
+| **Why** | Render branch ≠ AWS Redis/voice path |
 
 ```powershell
 cd D:\dev\BridgeOnlineNEXTJS
@@ -84,364 +159,195 @@ git checkout AWSDep
 git pull origin AWSDep
 ```
 
-Confirm the CDK folder exists:
+---
 
-```powershell
-dir deploy\aws\cdk
-```
+## Phase 2 — CDK bootstrap (once per account/region)
+
+| | |
+|--|--|
+| **What** | S3 + IAM roles CloudFormation needs to deploy CDK apps |
+| **How** | `cd deploy\aws\cdk` → `npm install` → `npx cdk bootstrap aws://ACCOUNT/ap-south-1` |
+| **Why** | Without bootstrap, `cdk deploy` cannot publish assets |
+
+Ignore noisy deprecation warnings if bootstrap ends with success.
 
 ---
 
-## Phase 2 — Bootstrap CDK (once per account + region)
+## Phase 3 — Deploy infrastructure
 
-CDK needs an S3 bucket / roles in the account. Run **once**:
+| | |
+|--|--|
+| **What** | VPC, security groups, ElastiCache, Secrets, EC2, Elastic IP |
+| **How** | `npx cdk deploy BridgeOnlineRedisVoice` → approve → copy **Outputs** |
+| **Why** | Automates networking + Redis that cannot be public |
+
+**Current code intent:** construct `AppHostMedium` (`t4g.medium`).  
+**If CREATE fails Free Tier:** use **`t4g.small`** until the account can launch paid types, then destroy/redeploy.
 
 ```powershell
 cd D:\dev\BridgeOnlineNEXTJS\deploy\aws\cdk
 npm install
-
-# Replace ACCOUNT with the 12-digit id from get-caller-identity
-npx cdk bootstrap aws://ACCOUNT/ap-south-1
-```
-
-Wait until it finishes successfully.
-
----
-
-## Phase 3 — Deploy the infrastructure
-
-```powershell
-cd D:\dev\BridgeOnlineNEXTJS\deploy\aws\cdk
 npx cdk deploy BridgeOnlineRedisVoice
 ```
 
-- Review the changeset; type **`y`** when asked.
-- Takes ~10–20 minutes (ElastiCache is slow to create).
+Save outputs: `ElasticIp`, `InstanceId`, `RedisPrimaryEndpoint`, `SuggestedTurnUrl`, `SecretArn`.
 
-When done, CDK prints **Outputs**. Copy them somewhere safe:
+**ASCII rule:** security group descriptions must be plain ASCII (no Unicode dashes).
 
-| Output | Use for |
-|--------|---------|
-| `ElasticIp` | Your public IP / DNS A record / TURN host |
-| `RedisPrimaryEndpoint` | `REDIS_URL=redis://<this>:6379` |
-| `SecretArn` | Update secrets in console/CLI |
-| `InstanceId` | SSM session |
-| `SuggestedTurnUrl` | `TURN_URL` value |
-
-You can also re-list outputs later:
+**Destroy / recreate:**
 
 ```powershell
-aws cloudformation describe-stacks --stack-name BridgeOnlineRedisVoice --query "Stacks[0].Outputs" --region ap-south-1
+npx cdk destroy BridgeOnlineRedisVoice
+npx cdk deploy BridgeOnlineRedisVoice
 ```
 
 ---
 
-## Phase 4 — Fill Secrets Manager
+## Phase 4 — Secrets Manager
 
-Generate secrets on your laptop:
+| | |
+|--|--|
+| **What** | `bridgeonline/app` JSON: `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_SECRET`, `TURN_SECRET` |
+| **How** | Generate secrets → `put-secret-value` with **single-quoted** JSON on PowerShell |
+| **Why** | Keeps passwords out of git; EC2/IAM can read later |
 
 ```powershell
-# NextAuth secret
 openssl rand -base64 32
-
-# TURN secret (long random string is fine)
 openssl rand -hex 32
 ```
 
-Update the secret `bridgeonline/app` (Console → Secrets Manager → `bridgeonline/app` → Retrieve secret value → Edit), **or** CLI:
-
 ```powershell
-aws secretsmanager put-secret-value --region ap-south-1 --secret-id bridgeonline/app --secret-string "{
-  \"DATABASE_URL\": \"postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1\",
-  \"DIRECT_URL\": \"postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\",
-  \"NEXTAUTH_SECRET\": \"PASTE_OPENSSL_VALUE\",
-  \"TURN_SECRET\": \"PASTE_TURN_SECRET\"
-}"
+aws secretsmanager put-secret-value --region ap-south-1 --secret-id bridgeonline/app --secret-string '{"DATABASE_URL":"postgresql://postgres.PROJECT:PASSWORD@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1","DIRECT_URL":"postgresql://postgres.PROJECT:PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres","NEXTAUTH_SECRET":"...","TURN_SECRET":"..."}'
 ```
 
-**Important:** pooler host must stay **`aws-1-ap-south-1`** for this project (not `aws-0`).
+**Why `aws-1` not `aws-0`:** this Supabase project’s pooler is on **`aws-1-ap-south-1`**; wrong host → tenant not found.
 
 ---
 
-## Phase 5 — Lock SSH (optional but recommended)
+## Phase 5 — Log into EC2 (SSM)
 
-In EC2 Console → Security Groups for the app:
+| | |
+|--|--|
+| **What** | Interactive shell on the instance |
+| **How** | `aws ssm start-session --target i-… --region ap-south-1` then `sudo -i` |
+| **Why** | Install runtime, clone app, manage pm2/Caddy |
 
-- Prefer **remove** inbound TCP 22 from `0.0.0.0/0` and use **SSM Session Manager** only, **or**
-- Restrict TCP 22 to **your home IP only**.
+If **`TargetNotConnected` / `ConnectionLost`:**
 
-Keep open:
-
-| Port | Protocol | Why |
-|------|----------|-----|
-| 80 | TCP | HTTP / ACME |
-| 443 | TCP | HTTPS + Socket.io WSS |
-| 3478 | TCP + UDP | TURN |
-| 49152–49200 | UDP | TURN relay |
-
----
-
-## Phase 6 — Log into the EC2 instance
-
-```powershell
-# Replace i-xxxxxxxx with InstanceId output
-aws ssm start-session --target i-xxxxxxxx --region ap-south-1
-```
-
-You are now on Amazon Linux 2023 as `ssm-user` / root context depending on config. Switch to a normal shell if needed:
-
-```bash
-sudo -i
-```
+1. Confirm region `ap-south-1` and instance `running`
+2. `aws ec2 reboot-instances --instance-ids i-…`
+3. Wait until Ping = **Online**
+4. Retry session
 
 ---
 
-## Phase 7 — Configure coturn (voice)
+## Phase 6 — Host packages (manual; don’t trust user-data alone)
 
-On the instance:
+| | |
+|--|--|
+| **What** | Docker, git, Node 22, pm2, Caddy, optional swap, coturn container |
+| **How** | `dnf install`, Nodesource, Caddy binary, `docker run coturn`, swapfile |
+| **Why** | User-data often incomplete; these are the moving parts of the game host |
+
+**Swap (strongly recommended on 2 GB):**
 
 ```bash
-# Put the SAME value as Secrets Manager TURN_SECRET
-sudo sed -i 's/static-auth-secret=.*/static-auth-secret=PASTE_TURN_SECRET/' /etc/coturn/turnserver.conf
-
-# If coturn package did not install via userdata, install it:
-# sudo dnf install -y coturn   # or build from source / Docker if missing
-
-sudo systemctl enable --now coturn
-sudo systemctl status coturn
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
 
-Confirm listening:
+**coturn (Docker example):**
 
 ```bash
-ss -ulnp | grep 3478
-```
-
-If coturn is missing from AL2023 repos, run it via Docker instead:
-
-```bash
-docker run -d --name coturn --network host \
-  -e DETECT_EXTERNAL_IP=yes \
-  coturn/coturn \
-  -n --log-file=stdout \
-  --use-auth-secret --static-auth-secret=PASTE_TURN_SECRET \
-  --realm=bridgeonline \
-  --listening-port=3478 \
+docker run -d --name coturn --restart unless-stopped --network host \
+  coturn/coturn -n --log-file=stdout \
+  --external-ip=YOUR_EIP \
+  --use-auth-secret --static-auth-secret=YOUR_TURN_SECRET \
+  --realm=bridgeonline --listening-port=3478 \
   --min-port=49152 --max-port=49200
 ```
 
----
+**Caddy:** reverse_proxy `:80` → `127.0.0.1:3000` (systemd unit). Enable `caddy` + `amazon-ssm-agent` + `pm2 startup`.
 
-## Phase 8 — Install Node and the app on EC2
-
-Still on the instance:
-
-```bash
-# Node 22 (Amazon Linux)
-curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-dnf install -y nodejs git
-
-cd /opt
-git clone https://github.com/AkhtarShadab/BridgeOnlineNEXTJS.git bridgeonline
-cd bridgeonline
-git checkout AWSDep
-
-cp deploy/aws/env.aws.template .env
-nano .env   # or vi
-```
-
-### Fill `.env` (critical fields)
-
-Replace placeholders with your real values:
-
-```bash
-NEXTAUTH_URL=https://YOUR_DOMAIN_OR_HTTPS_HOST
-AUTH_TRUST_HOST=true
-NEXTAUTH_SECRET=<same as Secrets Manager>
-
-DATABASE_URL=postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
-DIRECT_URL=postgresql://postgres.zxglihcentjhwwxqkprb:YOUR_DB_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
-
-REDIS_URL=redis://<RedisPrimaryEndpoint>:6379
-
-FEATURE_VOICE_CHAT=true
-NEXT_PUBLIC_FEATURE_VOICE_CHAT=true
-TURN_URL=turn:<ElasticIp>:3478?transport=udp
-TURN_SECRET=<same as coturn / Secrets Manager>
-TURN_TTL=3600
-
-FEATURE_RECONNECT_GRACE=true
-NEXT_PUBLIC_FEATURE_RECONNECT_GRACE=true
-
-FEATURE_AI_HINTS=false
-FEATURE_HOT_COLD_STATE=false
-FEATURE_ACTION_QUEUE=false
-
-NODE_ENV=production
-PORT=3000
-```
-
-Build and start:
-
-```bash
-npm ci --legacy-peer-deps
-npx prisma generate
-npm run build
-
-# Quick smoke test (foreground)
-npm run start:all
-```
-
-In another SSM session (or from laptop):
-
-```bash
-curl -s http://127.0.0.1:3000/api/health
-# expect: "db":"up","redis":"up"
-```
-
-Stop the foreground process (`Ctrl+C`) once healthy, then install a process manager:
-
-```bash
-npm install -g pm2
-pm2 start npm --name bridgeonline -- run start:all
-pm2 save
-pm2 startup
-# run the command pm2 prints
-```
+Helper stub: [`deploy/aws/setup-fresh-host.sh`](../../deploy/aws/setup-fresh-host.sh).
 
 ---
 
-## Phase 9 — HTTPS with Caddy (recommended)
+## Phase 7 — App on the box
 
-Point your DNS **A record** to the Elastic IP (`play.example.com` → EIP).
+| | |
+|--|--|
+| **What** | BridgeOnline production process (`start:all`) |
+| **How** | Clone `AWSDep` → `.env` from template → `npm ci` → `prisma generate` → `build` → `pm2` |
+| **Why** | Same all-in-one server as Render, with Redis + TURN env |
 
-On the instance:
-
-```bash
-dnf install -y dnf-plugins-core
-# Official Caddy repo varies by distro; if package missing, use the static binary:
-curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=arm64" -o /usr/local/bin/caddy
-chmod +x /usr/local/bin/caddy
-
-cat >/etc/caddy/Caddyfile <<'EOF'
-play.example.com {
-  reverse_proxy 127.0.0.1:3000
-}
-EOF
-
-# Adjust service unit as needed; simplest test:
-caddy run --config /etc/caddy/Caddyfile
-```
-
-Update `.env`:
+**Build rule on small instances:**
 
 ```bash
-NEXTAUTH_URL=https://play.example.com
-```
-
-Rebuild if you baked `NEXT_PUBLIC_*` differently, then:
-
-```bash
-pm2 restart bridgeonline
-```
-
-Caddy auto-provisions Let's Encrypt certificates when DNS points at the EIP and ports 80/443 are open.
-
----
-
-## Phase 10 — Verify everything
-
-From your laptop:
-
-```powershell
-curl -s https://play.example.com/api/health
-# {"status":"ok","db":"up","redis":"up",...}
-
-curl -s https://play.example.com/api/voice/turn-credentials
-# should include "iceServers" with a turn: entry (when authenticated / as implemented)
-```
-
-In the app logs (`pm2 logs bridgeonline`):
-
-- `[Socket.io] Redis adapter enabled`
-- No Prisma tenant/password errors
-
-Manual game test:
-
-1. Open the site in two browsers (or two devices on different networks).
-2. Register / login, create a table, play a few cards.
-3. Toggle voice — audio should work when TURN is reachable (UDP 3478 + relay range).
-4. Refresh mid-hand with reconnect grace on — seat should restore within ~30s.
-
----
-
-## Phase 11 — Day-2 operations
-
-### Update the app
-
-```bash
+pm2 stop bridgeonline
+docker stop coturn
 cd /opt/bridgeonline
 git pull origin AWSDep
-npm ci --legacy-peer-deps
-npx prisma generate
 npm run build
-pm2 restart bridgeonline
+docker start coturn
+systemctl start caddy
+pm2 start bridgeonline
+pm2 save
 ```
 
-### Watch cost
+**`.env` essentials:** `NEXTAUTH_URL`, Supabase URLs, `REDIS_URL`, voice/`TURN_*` flags.
 
-- AWS Billing → Cost Explorer
-- Destroy when done playing for the week if you want to freeze spend:
-
-```powershell
-cd D:\dev\BridgeOnlineNEXTJS\deploy\aws\cdk
-npx cdk destroy BridgeOnlineRedisVoice
+```bash
+curl -s http://127.0.0.1/api/health
+# expect db:up redis:up
 ```
 
-This deletes EC2, Redis, EIP association, etc. Supabase data is untouched.
+---
 
-### Security follow-ups
+## Phase 8 — HTTPS & voice (next session)
 
-- Rotate Supabase DB password if it was ever pasted in chat.
-- Restrict SSH; prefer SSM.
-- Never commit a filled `.env`.
+| | |
+|--|--|
+| **What** | TLS so browsers treat the site as a secure context |
+| **How** | DNS A record → EIP; Caddy site block with domain (Let’s Encrypt) |
+| **Why** | Mic and reliable WebRTC need HTTPS; HTTP on a public IP keeps voice off by design |
+
+Until then: gameplay + Redis work; voice auto-join is skipped on non-secure contexts (code on `AWSDep`).
 
 ---
 
-## Troubleshooting
+## Day-2 ops cheat sheet
 
-| Symptom | Fix |
-|---------|-----|
-| `aws` not recognized | Reinstall CLI; open a **new** terminal; check PATH |
-| CDK deploy fails on ElastiCache | Ensure 2 AZs / public subnets created; wait and retry; check IAM |
-| `/api/health` redis `down` | App SG → Redis SG on 6379; `REDIS_URL` host correct; same VPC |
-| Prisma `tenant/user not found` | Wrong pooler host — must be `aws-1-ap-south-1` for this project |
-| Prisma auth failed | Reset Supabase DB password; update `.env` + Secrets Manager |
-| Voice works on LAN but not remote | TURN ports blocked; confirm `TURN_URL` uses Elastic IP; secret mismatch with coturn |
-| Socket drops after 60s | If you later add an ALB, raise idle timeout to 3600; with Caddy→Node this is usually fine |
-| Free Render still running | Fine in parallel; friends should use the **AWS HTTPS URL** |
+| Task | Command / action |
+|------|------------------|
+| Health | `curl http://EIP/api/health` |
+| App logs | `pm2 logs bridgeonline` |
+| SSM status | `aws ssm describe-instance-information --filters Key=InstanceIds,Values=i-…` |
+| Reboot (SSM dead) | `aws ec2 reboot-instances --instance-ids i-…` |
+| Tear down spend | `npx cdk destroy BridgeOnlineRedisVoice` |
+| Console empty? | Switch region to **ap-south-1 (Mumbai)** |
 
 ---
 
-## Quick path (cheaper, no ElastiCache)
+## Recommended path for next deploy
 
-If you only want Redis + app on one box (~$12–15/mo) and can skip managed Redis:
-
-1. Launch a Lightsail/EC2 yourself (or keep the CDK EC2 and delete the ElastiCache resource).
-2. `dnf install -y redis` / `systemctl enable --now redis`
-3. `REDIS_URL=redis://127.0.0.1:6379`
-4. Same app + Caddy + coturn steps as above.
-
-See also [`aws-redis-credits.md`](./aws-redis-credits.md).
+1. Unlock paid EC2 (billing/verification) **or** accept `t4g.small` + swap.
+2. `cdk destroy` if the stack is half-broken → set a launchable instance type → `cdk deploy`.
+3. Manual host setup (Phases 6–7), **one command per line**.
+4. Confirm health + play a hand.
+5. Add domain + HTTPS before relying on voice.
 
 ---
 
-## Reference files in this repo
+## Related docs
 
-| Path | Role |
-|------|------|
-| `deploy/aws/cdk/` | Infrastructure as Code |
-| `deploy/aws/env.aws.template` | Env template |
-| `deploy/aws/README.md` | Asset index |
-| `docs/2-deployment-guide/aws.md` | Full AWS map (ECS/ALB later) |
-| `docs/bridgeonline-aws-redis-voice.drawio` | Architecture diagram |
+| Doc | Role |
+|-----|------|
+| [`aws-redis-credits.md`](./aws-redis-credits.md) | Credits / Redis options without full CDK |
+| [`aws.md`](./aws.md) | Larger ECS/ALB/RDS map |
+| [`deploy/aws/README.md`](../../deploy/aws/README.md) | Asset index |
+| [`deploy/aws/cdk/README.md`](../../deploy/aws/cdk/README.md) | CDK quick reference |
+| [`deploy/aws/env.aws.template`](../../deploy/aws/env.aws.template) | Env template |
